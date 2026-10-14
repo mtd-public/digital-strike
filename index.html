@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1d2418">
+  <title>Digital Strike</title>
+  <link rel="icon" href="data:,">
+  <!-- Guard CSS first so the game CSS can override it (mstr-gme-dsgn-tmpt kits/touch-zoom-guard). -->
+  <link rel="stylesheet" href="touch-zoom-guard/touch-zoom-guard.css">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- No build step: an import map points the bare 'three' specifier at the vendored module build (r160). -->
+  <script type="importmap">
+    { "imports": { "three": "./js/vendor/three.module.min.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <canvas id="overlay"></canvas>
+  <div id="vignette"></div>
+
+  <div id="hud" class="hidden">
+    <div class="hud-tl">
+      <div class="gauge" id="armor-gauge"><span class="lbl">ARMOR</span><div class="bar"><div id="armor-bar"></div></div></div>
+      <div class="gauge" id="fuel-gauge"><span class="lbl">FUEL</span><div class="bar"><div id="fuel-bar"></div></div></div>
+      <div class="statline"><span id="lives" class="lives"></span><span id="score" class="score">0</span></div>
+      <canvas id="radar" aria-label="Radar"></canvas>
+      <div id="craft-name" class="craft-name"></div>
+    </div>
+    <div class="hud-top">
+      <div class="obj">
+        <div id="obj-text" class="obj-text"></div>
+        <div id="obj-goal" class="obj-goal"></div>
+        <div id="obj-bar" class="obj-bar hidden"><span id="obj-bar-label"></span><div class="hbar"><div id="obj-bar-fill"></div></div></div>
+      </div>
+      <div id="nav" class="nav" aria-label="Direction to the objective">
+        <svg id="nav-arrow" viewBox="-50 -50 100 100" width="46" height="46"><circle r="44" class="ring"/><path d="M0,-34 L22,8 L7,4 L7,28 L-7,28 L-7,4 L-22,8 Z" class="arrow"/></svg>
+        <div class="nav-txt"><span id="nav-label">--</span><span id="nav-dist"></span></div>
+      </div>
+    </div>
+    <div class="corner-btns" data-touch-allow>
+      <button id="pause-btn" class="mini" aria-label="Pause">II</button>
+      <button id="cam-btn" class="mini" aria-label="Camera">◈</button>
+      <button id="mute-btn" class="mini" aria-label="Mute">♪</button>
+    </div>
+    <div id="warn" class="warn hidden"></div>
+    <div id="toasts"></div>
+    <div class="pad" aria-label="Weapons">
+      <button id="btn-action" class="pbtn action hidden">EXIT</button>
+      <button id="btn-mine" class="pbtn mine"><span id="name-mine" class="wname">MINES</span><span id="ammo-mine" class="ammo"></span></button>
+      <button id="btn-msl" class="pbtn msl"><span id="name-msl" class="wname">HELLFIRE</span><span id="ammo-msl" class="ammo"></span></button>
+      <button id="btn-gun" class="pbtn gun"><span id="name-gun" class="wname">CHAIN GUN</span><span id="ammo-gun" class="ammo"></span></button>
+    </div>
+  </div>
+
+  <div id="title" class="screen" data-touch-allow>
+    <div class="card wide">
+      <h1>DIGITAL<span>STRIKE</span></h1>
+      <p class="tag">An isometric attack-helicopter campaign. Fly the Apache, then steal something better.</p>
+      <div id="missions" class="missions"></div>
+      <div class="opts">
+        <div class="opt"><span>CRAFT</span><div class="seg" id="craft-seg"><button data-v="apache">APACHE</button><button data-v="alien">XH-0</button></div></div>
+        <div class="opt"><span>CAMERA</span><div class="seg" id="cam-seg"><button data-v="iso">ISO</button><button data-v="strike">STRIKE</button></div></div>
+        <div class="opt"><span>LOOK</span><div class="seg" id="art-seg"><button data-v="retro">PS1</button><button data-v="smooth">SMOOTH</button></div></div>
+      </div>
+      <details class="how"><summary>Controls</summary>
+        <ul>
+          <li><b>Left thumb</b>: drag anywhere on the left to fly (the stick floats under your thumb). Desktop: <b>WASD</b> / arrows</li>
+          <li><b>GUN</b> (hold): chain gun · <b>MSL</b>: Hellfires, homing once the reticle turns red · <b>MINE</b>: drop an explosive mine</li>
+          <li>Desktop: <b>Space / J</b> gun · <b>K</b> missile · <b>L</b> mine · <b>E</b> exit / enter · <b>C</b> camera · <b>P</b> pause · <b>M</b> mute</li>
+          <li>Gamepad: left stick fly, right stick aim the nose, <b>RT</b> gun, <b>RB/A</b> missile, <b>LB/B</b> mine, <b>X</b> exit / enter, <b>Y</b> camera</li>
+          <li>Holding fire swings the nose onto the nearest target. Hover on the <b>LZ</b> pad to rearm and refuel; fly over crates to winch them up.</li>
+          <li><b>STRIKE</b> camera: the view sits behind you and the stick turns the nose (Soviet Strike controls).</li>
+        </ul>
+      </details>
+      <p class="small" id="unlock"></p>
+    </div>
+  </div>
+
+  <div id="brief" class="screen hidden" data-touch-allow>
+    <div class="card">
+      <div class="code" id="brief-code"></div>
+      <h2 id="brief-name"></h2>
+      <p id="brief-text"></p>
+      <ul id="brief-tips" class="tips"></ul>
+      <div class="btns"><button id="brief-back" class="ghost">BACK</button><button id="brief-go">LAUNCH</button></div>
+    </div>
+  </div>
+
+  <div id="pause" class="screen hidden" data-touch-allow>
+    <div class="card">
+      <h2>PAUSED</h2>
+      <p class="obj-goal" id="pause-goal"></p>
+      <div class="btns col"><button id="resume-btn">RESUME</button><button id="restart-btn" class="ghost">RESTART MISSION</button><button id="quit-btn" class="ghost">MISSION SELECT</button></div>
+    </div>
+  </div>
+
+  <div id="result" class="screen hidden" data-touch-allow>
+    <div class="card">
+      <div class="code" id="result-code"></div>
+      <h2 id="result-title"></h2>
+      <p id="result-why"></p>
+      <div class="stats" id="result-stats"></div>
+      <p class="small" id="result-unlock"></p>
+      <div class="btns"><button id="retry-btn" class="ghost">RETRY</button><button id="next-btn">NEXT</button><button id="menu-btn" class="ghost">MENU</button></div>
+    </div>
+  </div>
+
+  <div id="loading" class="loading">LOADING <span id="load-pct">0</span>%</div>
+  <div class="tzg-hint zoom-hint">Pinch out to reset zoom</div>
+
+  <script src="touch-zoom-guard/touch-zoom-guard.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

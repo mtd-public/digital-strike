@@ -1,0 +1,551 @@
+{
+ "units": "metres",
+ "up": "+Y",
+ "forward": "+Z (glTF front)",
+ "tile_size": 16.0,
+ "source": "mtd-public/mstr-gme-dsgn-tmpt assets/models-3d (built for mtd-public/gig-ambulance by tools/blender)",
+ "assets": [
+  {
+   "name": "veh_bus",
+   "category": "vehicles",
+   "file": "models/vehicles/veh_bus.glb",
+   "description": "Traffic: big slow city bus \u2013 a moving wall to weave around.",
+   "size": {
+    "x": 2.48,
+    "y": 2.86,
+    "z": 6.67
+   },
+   "tris": 1876,
+   "nodes": [
+    "wheel_fl",
+    "wheel_fr",
+    "wheel_rl",
+    "wheel_rr"
+   ],
+   "role": "traffic"
+  },
+  {
+   "name": "veh_car_blue",
+   "category": "vehicles",
+   "file": "models/vehicles/veh_car_blue.glb",
+   "description": "Traffic: rounded bubble hatchback (sky blue).",
+   "size": {
+    "x": 2.02,
+    "y": 1.76,
+    "z": 3.1
+   },
+   "tris": 1608,
+   "nodes": [
+    "wheel_fl",
+    "wheel_fr",
+    "wheel_rl",
+    "wheel_rr"
+   ],
+   "role": "traffic"
+  },
+  {
+   "name": "veh_car_pink",
+   "category": "vehicles",
+   "file": "models/vehicles/veh_car_pink.glb",
+   "description": "Traffic: rounded bubble hatchback (pink).",
+   "size": {
+    "x": 2.02,
+    "y": 1.76,
+    "z": 3.1
+   },
+   "tris": 1608,
+   "nodes": [
+    "wheel_fl",
+    "wheel_fr",
+    "wheel_rl",
+    "wheel_rr"
+   ],
+   "role": "traffic"
+  },
+  {
+   "name": "veh_pickup",
+   "category": "vehicles",
+   "file": "models/vehicles/veh_pickup.glb",
+   "description": "Traffic: stubby pickup truck with a roll bar.",
+   "size": {
+    "x": 2.3,
+    "y": 2.04,
+    "z": 3.95
+   },
+   "tris": 1612,
+   "nodes": [
+    "wheel_fl",
+    "wheel_fr",
+    "wheel_rl",
+    "wheel_rr"
+   ],
+   "role": "traffic"
+  },
+  {
+   "name": "veh_taxi",
+   "category": "vehicles",
+   "file": "models/vehicles/veh_taxi.glb",
+   "description": "Traffic / rival: yellow cab stealing your fares.",
+   "size": {
+    "x": 2.02,
+    "y": 2.02,
+    "z": 3.1
+   },
+   "tris": 2048,
+   "nodes": [
+    "wheel_fl",
+    "wheel_fr",
+    "wheel_rl",
+    "wheel_rr"
+   ],
+   "role": "traffic"
+  },
+  {
+   "name": "bld_apartment",
+   "category": "buildings",
+   "file": "models/buildings/bld_apartment.glb",
+   "description": "Pickup spot: 3-storey apartment block with balconies.",
+   "size": {
+    "x": 16.0,
+    "y": 10.63,
+    "z": 16.0
+   },
+   "tris": 3648,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "pickup_spot": [
+    0,
+    -3.2
+   ]
+  },
+  {
+   "name": "bld_cafe",
+   "category": "buildings",
+   "file": "models/buildings/bld_cafe.glb",
+   "description": "Pickup spot: corner caf\u00e9 with striped awning and giant coffee-cup sign.",
+   "size": {
+    "x": 16.0,
+    "y": 6.14,
+    "z": 16.0
+   },
+   "tris": 1750,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "pickup_spot": [
+    0,
+    -3.2
+   ]
+  },
+  {
+   "name": "bld_hospital",
+   "category": "buildings",
+   "file": "models/buildings/bld_hospital.glb",
+   "description": "Main drop-off: two-tile hospital with ER canopy, big red-cross sign and rooftop helipad.",
+   "size": {
+    "x": 32.0,
+    "y": 9.22,
+    "z": 16.0
+   },
+   "tris": 5112,
+   "nodes": [],
+   "tile": [
+    2,
+    1
+   ],
+   "dropoff": true,
+   "dropoff_spot": [
+    0,
+    -3.4
+   ]
+  },
+  {
+   "name": "bld_house_lilac",
+   "category": "buildings",
+   "file": "models/buildings/bld_house_lilac.glb",
+   "description": "Pickup spot: lilac cottage with a purple roof.",
+   "size": {
+    "x": 16.0,
+    "y": 5.57,
+    "z": 16.0
+   },
+   "tris": 1432,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "pickup_spot": [
+    0,
+    -3.2
+   ]
+  },
+  {
+   "name": "bld_house_peach",
+   "category": "buildings",
+   "file": "models/buildings/bld_house_peach.glb",
+   "description": "Pickup spot: peach cottage with a green roof.",
+   "size": {
+    "x": 16.0,
+    "y": 5.57,
+    "z": 16.0
+   },
+   "tris": 1432,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "pickup_spot": [
+    0,
+    -3.2
+   ]
+  },
+  {
+   "name": "bld_lighthouse",
+   "category": "buildings",
+   "file": "models/buildings/bld_lighthouse.glb",
+   "description": "Landmark pickup: candy-striped lighthouse at the pier.",
+   "size": {
+    "x": 16.0,
+    "y": 11.02,
+    "z": 16.0
+   },
+   "tris": 1482,
+   "nodes": [
+    "lamp"
+   ],
+   "tile": [
+    1,
+    1
+   ],
+   "pickup_spot": [
+    0,
+    -3.2
+   ]
+  },
+  {
+   "name": "bld_office",
+   "category": "buildings",
+   "file": "models/buildings/bld_office.glb",
+   "description": "Pickup spot / landmark: glassy office tower.",
+   "size": {
+    "x": 16.0,
+    "y": 16.19,
+    "z": 16.0
+   },
+   "tris": 1196,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "pickup_spot": [
+    0,
+    -3.2
+   ]
+  },
+  {
+   "name": "bld_pharmacy",
+   "category": "buildings",
+   "file": "models/buildings/bld_pharmacy.glb",
+   "description": "Drop-off (meds runs) & pickup: pharmacy with glowing green cross.",
+   "size": {
+    "x": 16.0,
+    "y": 5.28,
+    "z": 16.0
+   },
+   "tris": 964,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "pickup_spot": [
+    0,
+    -3.2
+   ],
+   "dropoff": true
+  },
+  {
+   "name": "bld_pizzeria",
+   "category": "buildings",
+   "file": "models/buildings/bld_pizzeria.glb",
+   "description": "Pizza side-gig hub: grab up to 3 hot pizzas here, even mid-patient-run.",
+   "size": {
+    "x": 16.0,
+    "y": 6.87,
+    "z": 16.0
+   },
+   "tris": 1722,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "pizza_spot": [
+    0,
+    -3.2
+   ]
+  },
+  {
+   "name": "lot_grass",
+   "category": "streets",
+   "file": "models/streets/lot_grass.glb",
+   "description": "Empty grass lot (filler / future building).",
+   "size": {
+    "x": 16.0,
+    "y": 0.78,
+    "z": 16.0
+   },
+   "tris": 92,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ]
+  },
+  {
+   "name": "lot_park",
+   "category": "streets",
+   "file": "models/streets/lot_park.glb",
+   "description": "Park lot: paths, fountain, pines, benches \u2013 shortcut through (bumpy!).",
+   "size": {
+    "x": 16.0,
+    "y": 4.06,
+    "z": 16.0
+   },
+   "tris": 2210,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "drivable": true
+  },
+  {
+   "name": "road_corner",
+   "category": "streets",
+   "file": "models/streets/road_corner.glb",
+   "description": "90 deg street corner, N-E.",
+   "size": {
+    "x": 16.0,
+    "y": 0.48,
+    "z": 16.0
+   },
+   "tris": 468,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "connections": "EN",
+   "surface": "street"
+  },
+  {
+   "name": "road_cross",
+   "category": "streets",
+   "file": "models/streets/road_cross.glb",
+   "description": "Four-way crossroads with zebra crossings.",
+   "size": {
+    "x": 16.0,
+    "y": 0.48,
+    "z": 16.0
+   },
+   "tris": 1004,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "connections": "ENSW",
+   "surface": "street"
+  },
+  {
+   "name": "road_crosswalk",
+   "category": "streets",
+   "file": "models/streets/road_crosswalk.glb",
+   "description": "4-lane street with zebra crossing.",
+   "size": {
+    "x": 16.0,
+    "y": 0.48,
+    "z": 16.0
+   },
+   "tris": 600,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "connections": "NS",
+   "surface": "street"
+  },
+  {
+   "name": "road_end",
+   "category": "streets",
+   "file": "models/streets/road_end.glb",
+   "description": "Dead end, open to the N.",
+   "size": {
+    "x": 16.0,
+    "y": 0.48,
+    "z": 16.0
+   },
+   "tris": 428,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "connections": "N",
+   "surface": "street"
+  },
+  {
+   "name": "road_straight",
+   "category": "streets",
+   "file": "models/streets/road_straight.glb",
+   "description": "4-lane street, N-S.",
+   "size": {
+    "x": 16.0,
+    "y": 0.48,
+    "z": 16.0
+   },
+   "tris": 492,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "connections": "NS",
+   "surface": "street"
+  },
+  {
+   "name": "road_t",
+   "category": "streets",
+   "file": "models/streets/road_t.glb",
+   "description": "T-junction, open N/E/W.",
+   "size": {
+    "x": 16.0,
+    "y": 0.48,
+    "z": 16.0
+   },
+   "tris": 508,
+   "nodes": [],
+   "tile": [
+    1,
+    1
+   ],
+   "connections": "ENW",
+   "surface": "street"
+  },
+  {
+   "name": "prop_barrier",
+   "category": "props",
+   "file": "models/props/prop_barrier.glb",
+   "description": "Road-works barrier (smashable).",
+   "size": {
+    "x": 2.1,
+    "y": 1.3,
+    "z": 0.6
+   },
+   "tris": 368,
+   "nodes": [],
+   "smashable": true
+  },
+  {
+   "name": "prop_bush",
+   "category": "props",
+   "file": "models/props/prop_bush.glb",
+   "description": "Clump of bush blobs for lot edges.",
+   "size": {
+    "x": 1.25,
+    "y": 0.72,
+    "z": 0.78
+   },
+   "tris": 60,
+   "nodes": []
+  },
+  {
+   "name": "prop_fence",
+   "category": "props",
+   "file": "models/props/prop_fence.glb",
+   "description": "4 m green railing (cozy-town style) for parks and terraces.",
+   "size": {
+    "x": 4.14,
+    "y": 1.32,
+    "z": 0.24
+   },
+   "tris": 412,
+   "nodes": []
+  },
+  {
+   "name": "prop_lamp_post",
+   "category": "props",
+   "file": "models/props/prop_lamp_post.glb",
+   "description": "Green street lamp with glowing lantern.",
+   "size": {
+    "x": 0.42,
+    "y": 3.49,
+    "z": 0.42
+   },
+   "tris": 160,
+   "nodes": []
+  },
+  {
+   "name": "prop_palm",
+   "category": "props",
+   "file": "models/props/prop_palm.glb",
+   "description": "Beach palm with a curvy trunk and coconuts (breaks away).",
+   "size": {
+    "x": 3.12,
+    "y": 3.99,
+    "z": 2.91
+   },
+   "tris": 492,
+   "nodes": []
+  },
+  {
+   "name": "prop_tree_pine",
+   "category": "props",
+   "file": "models/props/prop_tree_pine.glb",
+   "description": "Tiered low-poly pine (reference style). Scale 0.7-1.3 for variety.",
+   "size": {
+    "x": 2.44,
+    "y": 3.58,
+    "z": 2.38
+   },
+   "tris": 84,
+   "nodes": []
+  },
+  {
+   "name": "prop_tree_round",
+   "category": "props",
+   "file": "models/props/prop_tree_round.glb",
+   "description": "Puffy round tree.",
+   "size": {
+    "x": 2.03,
+    "y": 2.9,
+    "z": 1.63
+   },
+   "tris": 84,
+   "nodes": []
+  },
+  {
+   "name": "prop_umbrella",
+   "category": "props",
+   "file": "models/props/prop_umbrella.glb",
+   "description": "Striped beach umbrella + towel (sends sand flying).",
+   "size": {
+    "x": 2.42,
+    "y": 2.46,
+    "z": 2.46
+   },
+   "tris": 176,
+   "nodes": []
+  }
+ ]
+}
