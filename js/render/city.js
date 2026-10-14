@@ -19,7 +19,7 @@ export const CITY_ASSETS = ['road_straight', 'road_crosswalk', 'road_corner', 'r
   'veh_car_blue', 'veh_car_pink', 'veh_taxi', 'veh_bus', 'veh_pickup', 'prop_palm', 'prop_tree_pine', 'prop_tree_round', 'prop_bush', 'prop_lamp_post', 'prop_umbrella', 'prop_barrier', 'prop_fence'];
 
 export function buildTown(w, theme) {
-  const L = w.level, root = new THREE.Group(), T = w.terrain, rng = mulberry32(1234);
+  const L = w.level, root = new THREE.Group(), T = w.terrain, rng = mulberry32(1234), lamps = [];
   const put = (name, x, z, yaw, y = T.surface(x, z), s = 1) => { if (!hasModel(name)) return; const o = spawn(name); o.position.set(x, y, z); o.rotation.y = yaw; o.scale.setScalar(s); root.add(o); return o; };
   if (L.city) {
     const C = L.city;
@@ -28,7 +28,7 @@ export function buildTown(w, theme) {
       const k = Math.max(0, fitRotation(ROAD_BASES[piece], cell.conn));
       if (piece === 'road_straight' && rng() < 0.3) piece = 'road_crosswalk';
       put(piece, cell.x, cell.z, (k * Math.PI) / 2, C.y + 0.02);
-      if (rng() < 0.3 && piece !== 'road_cross') put('prop_lamp_post', cell.x + 7, cell.z + 7, 0, C.y + 0.2);
+      if (rng() < 0.3 && piece !== 'road_cross') { put('prop_lamp_post', cell.x + 7, cell.z + 7, 0, C.y + 0.2); lamps.push([cell.x + 7, C.y + 3.6, cell.z + 7]); }
     }
     for (const [c, r, model, facing, span] of C.lots) put(model, cityX(C, c) + (span === 2 ? 8 : 0), cityZ(C, r), yawFor(facing), C.y + 0.01);
   }
@@ -53,7 +53,9 @@ export function buildTown(w, theme) {
   if (pal === 'vegas' && L.city) for (let r = 1; r < L.city.rows; r += 2) for (const s of [-1, 1]) put('prop_palm', cityX(L.city, 3) + s * 7.4, cityZ(L.city, r), 0, L.city.y + 0.2, 1.3);
   // the beach at the LZ: umbrellas and barriers
   if (L.lz && !L.lz.follow) { put('prop_barrier', L.lz.x + 10, L.lz.z, Math.PI / 2); put('prop_barrier', L.lz.x - 10, L.lz.z, Math.PI / 2); }
-  return bakeStatic(root);
+  const baked = bakeStatic(root);
+  baked.userData.lamps = lamps;
+  return baked;
 }
 function polyDistQuick(pts, x, z) {
   let best = Infinity;

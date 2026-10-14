@@ -94,7 +94,10 @@ Retro **PS1** by default (dr-mow's retro.js: ~300 lines, vertex snap, 15-bit dit
 fog); Smooth adds dr-mow's ink outlines. The town is the gig-ambulance pastel toy kit, toned per mission
 (tintMaterials). Palettes per mission in `js/render/terrain-view.js` THEMES: tropic day, overcast strait, desert
 dusk, Area 51 night, Vegas night (neon carries it). Emissive budget: lights, LEDs and neon are unlit vertex-colour
-'glow' (no per-projectile lights).
+'glow' plus additive glow sprites (one THREE.Points per size); explosions borrow one of three pooled point lights
+(never one per projectile, none in lite mode). A CSS screen grade per mission (vignette tint, faint CRT scanlines in
+PS1 mode) sits over the canvas. The player's Apache and XH-0 keep their dr-mow look; enemies are camouflaged
+(canvas-texture camo, scrolling tread belts) so they read against the ground.
 
 ## 8. Progression
 | # | Mission | Verb | Theme |
@@ -112,14 +115,16 @@ against each mission's `par`.
 Shake scaled by blast size; screen flash on big explosions; debris, scorch decals, shock rings; muzzle flash and a
 swivelling chin gun; Hellfire pod kick; exhaust puffs and rotor dust / spray when low; buildings fall to burning
 rubble that smokes for 30 s; aircraft spin down trailing fire; synth rotor bed, chain-gun rattle, SAM lock beeps.
+Explosions flash light onto the ground and throw embers and smoking debris; wrecks keep burning; boats, the tanker
+and splashes leave foam wakes; shield generators crackle with arcs.
 
 ## 10. Performance budget
 | Budget | Target | Now (desktop, busiest view) |
 |---|---|---|
-| Draw calls | ≤ 180 | ~90–180 (the town bakes per material look; models compact per material) |
-| Triangles | ≤ 200k | ~70–190k (the GLB town is the bulk) |
+| Draw calls | ≤ 200 | ~55–200 (the town bakes per material look; models compact per material; decor is instanced) |
+| Triangles | ≤ 200k | ~95–197k (the GLB town is the bulk; grass tufts add ~13k) |
 | DPR | ≤ 2; Retro renders ~300 lines | |
-| Old devices | `?lite=1` (auto on low memory): no shadows, 1× pixels | |
+| Old devices | `?lite=1` (auto on low memory): no shadows or cloud shadows, no explosion lights, 40 % of the grass, 1× pixels | |
 
 ## 11. Reuse plan (what came from where)
 | File | Source | Action |
@@ -153,3 +158,20 @@ rubble that smokes for 30 s; aircraft spin down trailing fire; synth rotor bed, 
   jets drop 2 × 16 instead of 4 × 34; casinos 520 → 1100 hp.
 - Verified: sim-check ALL PASS (every mission won by the autopilot, with and without god mode); smoke test at
   desktop, iPhone 13, iPhone landscape and iPad: 0 console errors, 0 page scroll.
+
+### Graphics upgrade (everything but the player's craft)
+- Ground: a grain texture over the vertex colours, smooth beach and rock blends, swaying grass tufts, boulders,
+  dirt tracks worn along the tank and technical routes (`js/render/decor.js`).
+- Sea: a shader on the existing water plane: depth tint from the terrain heights, layered waves and swell, shore
+  foam bands, sun glints; wakes behind boats, the tanker and splashes.
+- Light and air: pooled explosion point lights, additive glow sprites for beacons / floodlights / lamps / runway
+  lights, billboard fire and smoke (tinted at night), embers, smoking debris, burning wrecks, drifting cloud
+  shadows, gulls, desert dust, a per-mission screen grade (`js/render/atmos.js`).
+- Models: a Hind-style gunship replaces the Apache-clone enemy; camouflaged tanks with scrolling treads, skirts,
+  stowage and an alien hover variant; new gunboats and a full tanker (manifold, cranes, accommodation block,
+  helipad); kitted troopers; nav lights on jets; a glowing underside on saucers; SAM sites dug in with sandbags.
+- Structures: foundations under every building, fenced data halls with floodlights, condensers and dishes, a
+  rooftop pad on the data core, generator arcs, rubble with scorch, girders and embers.
+- The player's Apache and XH-0 models are unchanged.
+- Cost: SwiftShader (CPU) frame time ~35 % higher than before; lite mode trims the grass and drops the
+  explosion lights. Verified: sim-check ALL PASS; smoke 0 console errors, 0 page scroll (also with `?lite=1`).

@@ -7,7 +7,8 @@
 //   humanParts          cosmic-calamity makeHuman (troopers, the reptilian grunt / heavy, Snake for the pilot)
 //   createAlienCopter, createTank, createBoat, createJet, createTanker, createFlak, crates: new, in the same kit
 import * as THREE from 'three';
-import { mat, glowMat, inked, plain, OUTLINE, G, Kit, box, cyl, ball, cone, part, kitMeshes, compact } from './kit.js';
+import { mat, glowMat, inked, plain, OUTLINE, G, Kit, box, cyl, ball, cone, part, kitMeshes, compact, canvasTex } from './kit.js';
+import { RETRO } from '../retro.js';
 import { mergeGeometries } from '../vendor/addons/BufferGeometryUtils.js';
 
 // A box running along Z from z0 (back) to z1 (front) whose width, height and centre height change along it.
@@ -157,6 +158,11 @@ export function createLauncher() {
     const tube = inked(G.cyl(0.28, 0.28, 1.8, 10), dark, OUTLINE.mid); tube.rotation.x = Math.PI / 2; tube.position.set(sx, 0, 0.6); tubeG.add(tube);
     const lip = plain(G.torus(0.28, 0.06, 4, 12), stripe); lip.position.set(sx, 0, 1.5); tubeG.add(lip);
   }
+  // a sandbag ring and the fire-control radar on its post
+  const K = new Kit();
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; if (i === 3) continue; K.add('flat', box(1.0, 0.5, 0.55, { x: Math.cos(a) * 2.5, y: 0.25, z: Math.sin(a) * 2.5, ry: -a, color: 0xb8a878 }), box(0.9, 0.45, 0.5, { x: Math.cos(a + 0.26) * 2.5, y: 0.7, z: Math.sin(a + 0.26) * 2.5, ry: -a, color: 0xa89868 })); }
+  K.add('flat', cyl(0.06, 0.06, 2.2, 4, { x: -1.9, y: 1.1, z: -1.2, color: 0x6a6a6a }), part(new THREE.CylinderGeometry(0.55, 0.12, 0.25, 8, 1, true), { x: -1.9, y: 2.3, z: -1.2, rx: -1.0, color: 0xe4e8ec }));
+  kitMeshes(K, g);
   g.userData = { head, tube: tubeG };
   g.scale.setScalar(1.2);
   return g;
@@ -175,26 +181,123 @@ export function createFlak() {
   return g;
 }
 
-// ------------------------------------------------------------------ tanks (new: heliSlab hull and turret)
+// ------------------------------------------------------------------ camouflage and tread textures (enemy vehicles)
+const CAMO = { olive: ['#6b6a3a', '#4e5030', '#83794a', '#2e3024'], desert: ['#b09a68', '#8a7448', '#cbb88c', '#5a4a30'], grey: ['#7a7e82', '#5c6066', '#9aa0a4', '#3c4046'] };
+const camoCache = {};
+export function camoTex(kind = 'olive') {
+  if (camoCache[kind]) return camoCache[kind];
+  const P = CAMO[kind];
+  let sd = kind.length * 977 + 13;
+  const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  return (camoCache[kind] = canvasTex(64, 64, (c, w, h) => {
+    c.fillStyle = P[0]; c.fillRect(0, 0, w, h);
+    for (const col of [P[1], P[2], P[3]]) for (let i = 0; i < 8; i++) {
+      const x = r() * w, y = r() * h, rx = 4 + r() * 11, ry = 3 + r() * 6, a = r() * 3;
+      c.fillStyle = col;
+      for (const ox of [-w, 0, w]) for (const oy of [-h, 0, h]) { c.beginPath(); c.ellipse(x + ox, y + oy, rx, ry, a, 0, 6.3); c.fill(); }
+    }
+  }));
+}
+const camoMats = {};
+export function camoMat(kind = 'olive') {
+  return (camoMats[kind] ||= new THREE.MeshStandardMaterial({ map: camoTex(kind), roughness: 0.85, metalness: 0.1, flatShading: RETRO }));
+}
+let treadBase = null;
+function treadMat() { // one per tank, so each tank's tracks scroll at its own speed
+  treadBase ||= canvasTex(8, 32, (c, w, h) => { c.fillStyle = '#26261f'; c.fillRect(0, 0, w, h); c.fillStyle = '#4a4a40'; for (let y = 0; y < h; y += 4) c.fillRect(0, y, w, 2); c.fillStyle = '#16160f'; c.fillRect(3, 0, 2, h); });
+  const t = treadBase.clone(); t.repeat.set(1, 6); t.needsUpdate = true;
+  return new THREE.MeshStandardMaterial({ map: t, roughness: 0.95, flatShading: RETRO });
+}
+
+// ------------------------------------------------------------------ the enemy gunship: a Hind-style assault helicopter (new)
+// So enemies never look like you: a deep camouflaged cabin with a hump, tandem bubble canopies (gunner low in
+// the nose, pilot above and behind), dust-filtered intakes, drooping stub wings carrying rocket pods and
+// wingtip rails, a four-barrel chin gun, a five-blade rotor and a tail rotor on the right of the fin.
+export function createHind(camo = 'desert') {
+  const g = new THREE.Group(), tilt = new THREE.Group(); g.add(tilt);
+  const exhausts = [];
+  const body = camoMat(camo), dark = mat(0x26231f), glass = mat(0x4a6a7a, { roughness: 0.15, metalness: 0.5 }), red = mat(0xd8302a), rail = mat(0x9a9478);
+  tilt.add(inked(heliSlab(-1.9, 1.2, 1.3, 1.45, 0.05, 1.2, 1.35, 0), body, OUTLINE.mid));
+  tilt.add(inked(heliSlab(1.2, 2.6, 1.2, 1.35, 0, 0.62, 0.75, -0.32), body, OUTLINE.mid));
+  tilt.add(inked(heliSlab(-1.3, 1.0, 1.0, 0.5, 0.92, 0.9, 0.45, 0.92), body, OUTLINE.thin));
+  tilt.add(inked(heliSlab(-5.8, -1.9, 0.28, 0.32, 0.6, 0.8, 0.95, 0.2), body, OUTLINE.thin));
+  const gb = inked(G.sphere(0.5, 10, 8), glass, OUTLINE.thin); gb.scale.set(0.95, 0.75, 1.15); gb.position.set(0, -0.05, 2.35); tilt.add(gb);
+  const pb = inked(G.sphere(0.55, 10, 8), glass, OUTLINE.thin); pb.scale.set(1.0, 0.8, 1.2); pb.position.set(0, 0.62, 1.4); tilt.add(pb);
+  const pod = new THREE.Group(); tilt.add(pod);
+  for (const sx of [-1, 1]) {
+    const nac = inked(G.cyl(0.32, 0.3, 1.9, 10), body, OUTLINE.thin); nac.rotation.x = Math.PI / 2; nac.position.set(sx * 0.55, 1.12, 0); tilt.add(nac);
+    const filt = inked(G.sphere(0.34, 8, 6), dark, OUTLINE.thin); filt.scale.z = 0.7; filt.position.set(sx * 0.55, 1.12, 0.98); tilt.add(filt);
+    const ex = plain(G.cyl(0.18, 0.24, 0.6, 8), dark); ex.rotation.z = sx * 1.2; ex.position.set(sx * 0.95, 1.12, -1.05); tilt.add(ex);
+    const tip = new THREE.Object3D(); tip.position.set(sx * 1.25, 1.18, -1.1); tilt.add(tip); exhausts.push(tip);
+    const wing = plain(new THREE.BoxGeometry(2.3, 0.1, 0.85), body); wing.position.set(sx * 1.75, -0.18, -0.25); wing.rotation.z = -sx * 0.17; tilt.add(wing);
+    for (const [ox, oy] of [[1.0, -0.5], [1.85, -0.66]]) {
+      const rp = inked(G.cyl(0.22, 0.22, 1.1, 10), dark, OUTLINE.thin); rp.rotation.x = Math.PI / 2; rp.position.set(sx * ox, oy, -0.2); pod.add(rp);
+      const face = plain(new THREE.CircleGeometry(0.18, 8), red); face.position.set(sx * ox, oy, 0.36); pod.add(face);
+    }
+    for (const oy of [0, -0.22]) { const r = plain(G.cyl(0.07, 0.07, 1.0, 6), rail); r.rotation.x = Math.PI / 2; r.position.set(sx * 2.85, -0.52 + oy, -0.15); pod.add(r); }
+    const strut = plain(new THREE.BoxGeometry(0.08, 0.5, 0.08), dark); strut.position.set(sx * 0.75, -0.75, -0.6); tilt.add(strut);
+    const wh = inked(G.cyl(0.24, 0.24, 0.16, 10), dark, OUTLINE.thin); wh.rotation.z = Math.PI / 2; wh.position.set(sx * 0.82, -1.0, -0.6); tilt.add(wh);
+    const mark = plain(new THREE.CircleGeometry(0.24, 10), red); mark.position.set(sx * 0.075, 1.05, -5.75); mark.rotation.y = sx * Math.PI / 2; tilt.add(mark);
+  }
+  const nw = inked(G.cyl(0.18, 0.18, 0.14, 10), dark, OUTLINE.thin); nw.rotation.z = Math.PI / 2; nw.position.set(0, -0.95, 1.9); tilt.add(nw);
+  const gun = new THREE.Group(); gun.position.set(0, -0.62, 2.1); tilt.add(gun);
+  gun.add(inked(G.sphere(0.24, 10, 8), dark, OUTLINE.thin));
+  for (const [bx, by] of [[-0.05, 0.05], [0.05, 0.05], [-0.05, -0.05], [0.05, -0.05]]) { const b = plain(G.cyl(0.035, 0.035, 0.9, 5), dark); b.rotation.x = Math.PI / 2; b.position.set(bx, by, 0.5); gun.add(b); }
+  const flash = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0), glowMat(0xffe27a)); flash.position.z = 1.05; flash.visible = false; gun.add(flash);
+  tilt.add(inked(heliSlab(-6.4, -5.4, 0.12, 1.3, 1.05, 0.12, 0.5, 0.75), body, OUTLINE.thin));
+  const stab = plain(new THREE.BoxGeometry(1.9, 0.06, 0.5), body); stab.position.set(0, 0.6, -5.3); tilt.add(stab);
+  const tail = new THREE.Group(); tail.position.set(0.24, 1.35, -6.05); tilt.add(tail);
+  for (let i = 0; i < 3; i++) { const b = plain(new THREE.BoxGeometry(0.04, 1.2, 0.14), dark); b.rotation.x = (i * Math.PI * 2) / 3; tail.add(b); }
+  const mast = plain(G.cyl(0.1, 0.14, 0.6, 8), dark); mast.position.y = 1.45; tilt.add(mast);
+  const rotor = new THREE.Group(); rotor.position.y = 1.72; tilt.add(rotor);
+  for (let i = 0; i < 5; i++) { const b = plain(new THREE.BoxGeometry(3.6, 0.05, 0.3), dark); b.geometry.translate(1.8, 0, 0); b.rotation.y = (i * Math.PI * 2) / 5; rotor.add(b); }
+  rotor.add(plain(G.cyl(0.26, 0.26, 0.16, 8), dark));
+  const blur = new THREE.Mesh(new THREE.CircleGeometry(3.6, 20), new THREE.MeshBasicMaterial({ color: 0x1a1a1a, transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide }));
+  blur.rotation.x = -Math.PI / 2; blur.position.y = 1.74; tilt.add(blur);
+  const beacon = plain(G.sphere(0.08, 6, 4), glowMat(0xff2a2a)); beacon.position.set(0, 0.85, -5.9); tilt.add(beacon);
+  g.userData = { tilt, rotor, tail, pod, podY: 0, gun, flash, exhausts, hellfires: [], blur, kick: 0 };
+  compact(tilt, [rotor, tail, gun, pod, blur, ...exhausts]); compact(pod);
+  return g;
+}
+
+// ------------------------------------------------------------------ tanks (camouflaged, tracked, kitted out)
 export function createTank(alien = false) {
   const g = new THREE.Group(), hullG = new THREE.Group(); g.add(hullG);
-  const body = mat(alien ? 0x3a2a4a : 0x6b6a3a), dark = mat(alien ? 0x1a1022 : 0x2e2e26), trim = mat(alien ? 0x7a5a9a : 0x8a8a5a);
-  hullG.add(inked(heliSlab(-2.8, 2.8, 2.4, 0.9, 0.95, 2.2, 0.7, 0.9), body, OUTLINE.mid));
-  hullG.add(inked(heliSlab(2.4, 3.3, 2.2, 0.7, 0.9, 2.0, 0.3, 0.75), body, OUTLINE.thin)); // glacis
-  if (!alien) for (const sx of [-1, 1]) { // tracks with road wheels
-    hullG.add(inked(G.box(0.7, 0.9, 6.2), dark, OUTLINE.thin).translateX(sx * 1.45).translateY(0.45));
-    for (let k = 0; k < 5; k++) { const wh = plain(G.cyl(0.36, 0.36, 0.14, 8), trim); wh.rotation.z = Math.PI / 2; wh.position.set(sx * 1.84, 0.42, -2.2 + k * 1.1); hullG.add(wh); }
+  const body = alien ? mat(0x3a2a4a, { metalness: 0.5, roughness: 0.4 }) : camoMat('olive'), dark = mat(alien ? 0x1a1022 : 0x2a2a24), trim = mat(alien ? 0x7a5a9a : 0x6e6e4a), steel = mat(0x55554c);
+  hullG.add(inked(heliSlab(-2.9, 2.6, 2.3, 0.95, 0.95, 2.2, 0.8, 0.95), body, OUTLINE.mid));
+  hullG.add(inked(heliSlab(2.6, 3.4, 2.2, 0.8, 0.95, 2.0, 0.25, 0.72), body, OUTLINE.thin)); // glacis
+  hullG.add(inked(heliSlab(-3.2, -2.9, 2.2, 0.7, 0.85, 2.3, 0.95, 0.95), body, OUTLINE.thin)); // rear plate
+  for (let k = 0; k < 5; k++) hullG.add(plain(G.box(1.5, 0.05, 0.14), dark).translateY(1.45).translateZ(-2.6 + k * 0.28)); // engine deck grille
+  for (const sx of [-0.45, 0.45]) { const d = inked(G.cyl(0.28, 0.28, 0.85, 10), steel, OUTLINE.thin); d.rotation.z = Math.PI / 2; d.position.set(sx, 1.0, -3.4); hullG.add(d); }
+  const tracks = [];
+  if (!alien) {
+    const tm = treadMat(); tracks.push(tm);
+    for (const sx of [-1, 1]) {
+      const belt = new THREE.Mesh(G.box(0.62, 0.85, 6.5), tm); belt.position.set(sx * 1.45, 0.45, 0); belt.castShadow = true; hullG.add(belt);
+      hullG.add(inked(G.box(0.1, 0.42, 5.4), body, OUTLINE.thin).translateX(sx * 1.8).translateY(1.0));
+      for (let k = 0; k < 6; k++) { const wh = plain(G.cyl(0.34, 0.34, 0.12, 8), trim); wh.rotation.z = Math.PI / 2; wh.position.set(sx * 1.79, 0.4, -2.4 + k * 0.96); hullG.add(wh); }
+      for (const [z, r] of [[3.0, 0.38], [-3.0, 0.32]]) { const sp = plain(G.cyl(r, r, 0.14, 8), dark); sp.rotation.z = Math.PI / 2; sp.position.set(sx * 1.79, 0.55, z); hullG.add(sp); }
+    }
   } else for (const sx of [-1, 1]) for (const sz of [-1.8, 1.8]) { // hover pads that glow
     hullG.add(inked(G.cyl(0.6, 0.75, 0.4, 10), dark, OUTLINE.thin).translateX(sx * 1.3).translateZ(sz).translateY(0.35));
     const glo = plain(new THREE.CircleGeometry(0.55, 10), glowMat(0xb45cff)); glo.rotation.x = Math.PI / 2; glo.position.set(sx * 1.3, 0.14, sz); hullG.add(glo);
+    hullG.add(plain(G.box(0.05, 0.08, 4.8), glowMat(0xd08aff)).translateX(sx * 1.16).translateY(1.2));
   }
-  const turret = new THREE.Group(); turret.position.set(0, 1.4, -0.3); g.add(turret);
-  turret.add(inked(heliSlab(-1.3, 1.2, 1.9, 0.8, 0.35, 1.5, 0.6, 0.3), body, OUTLINE.mid));
-  const gun = new THREE.Group(); gun.position.set(0, 0.4, 1.1); turret.add(gun);
-  const barrel = inked(G.cyl(0.12, 0.15, 3.2, 8), dark, OUTLINE.thin); barrel.rotation.x = Math.PI / 2; barrel.position.z = 1.6; gun.add(barrel);
-  const tip = new THREE.Mesh(G.sphere(0.22, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff6a20 })); tip.position.z = 3.25; tip.visible = false; gun.add(tip);
-  const hatch = plain(G.cyl(0.3, 0.3, 0.15, 8), trim); hatch.position.set(0.4, 0.75, -0.4); turret.add(hatch);
-  g.userData = { turret, gun, tip, hull: hullG };
+  const turret = new THREE.Group(); turret.position.set(0, 1.42, -0.3); g.add(turret);
+  turret.add(inked(heliSlab(-1.4, 1.2, 1.95, 0.75, 0.35, 1.5, 0.6, 0.3), body, OUTLINE.mid));
+  turret.add(inked(heliSlab(-2.05, -1.4, 1.45, 0.55, 0.38, 1.85, 0.7, 0.36), body, OUTLINE.thin)); // bustle
+  turret.add(plain(G.box(0.8, 0.55, 0.4), dark).translateY(0.35).translateZ(1.25)); // mantlet
+  const cup = inked(G.cyl(0.32, 0.36, 0.32, 10), trim, OUTLINE.thin); cup.position.set(0.45, 0.82, -0.5); turret.add(cup);
+  const mg = plain(G.cyl(0.04, 0.04, 0.9, 5), dark); mg.rotation.x = Math.PI / 2; mg.position.set(0.45, 1.05, -0.1); turret.add(mg);
+  for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) { const sd = plain(G.cyl(0.06, 0.06, 0.32, 5), dark); sd.rotation.x = 1.1; sd.position.set(sx * (0.62 + k * 0.12), 0.75, 0.75); turret.add(sd); }
+  const ant = plain(G.cyl(0.02, 0.02, 2.6, 4), dark); ant.position.set(-0.6, 1.9, -1.7); turret.add(ant);
+  for (const sx of [-1, 1]) turret.add(plain(G.box(0.18, 0.4, 0.9), trim).translateX(sx * 0.95).translateY(0.42).translateZ(-1.6));
+  const gun = new THREE.Group(); gun.position.set(0, 0.4, 1.3); turret.add(gun);
+  const barrel = inked(G.cyl(0.11, 0.14, 3.4, 8), dark, OUTLINE.thin); barrel.rotation.x = Math.PI / 2; barrel.position.z = 1.7; gun.add(barrel);
+  const fume = plain(G.cyl(0.18, 0.18, 0.45, 8), dark); fume.rotation.x = Math.PI / 2; fume.position.z = 1.9; gun.add(fume);
+  gun.add(plain(G.box(0.32, 0.25, 0.35), dark).translateZ(3.4));
+  const tip = new THREE.Mesh(G.sphere(0.24, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff6a20 })); tip.position.z = 3.6; tip.visible = false; gun.add(tip);
+  g.userData = { turret, gun, tip, hull: hullG, tracks };
   compact(hullG); compact(turret, [gun]);
   return g;
 }
@@ -209,19 +312,35 @@ export function createMG() {
   return g;
 }
 
-// ------------------------------------------------------------------ gunboat (new; sub-sinkers' boat sprite as the silhouette)
+// ------------------------------------------------------------------ gunboat (sub-sinkers' boat sprite as the silhouette, now detailed)
 export function createBoat() {
-  const g = new THREE.Group(), grey = mat(0x6e7680), dark = mat(0x2c3138), white = mat(0xd8dde2), red = mat(0x9a2a24);
-  g.add(inked(heliSlab(-4.5, 3.5, 3.4, 1.6, 0.5, 2.6, 1.5, 0.6), grey, OUTLINE.mid));
-  g.add(inked(heliSlab(3.5, 6, 2.6, 1.5, 0.6, 0.15, 1.2, 0.9), grey, OUTLINE.thin)); // bow
-  g.add(plain(heliSlab(-4.5, 6, 3.45, 0.4, -0.15, 0.2, 0.3, 0.0), red));
-  g.add(inked(G.box(2.2, 1.6, 2.6), white, OUTLINE.thin).translateY(2.0).translateZ(-1.5));
-  g.add(plain(G.box(2.25, 0.4, 2.0), mat(0x22384c)).translateY(2.5).translateZ(-1.2));
-  const mast = plain(G.cyl(0.07, 0.09, 2.6, 6), dark); mast.position.set(0, 4.0, -2.0); g.add(mast);
-  const radar = plain(G.box(1.2, 0.12, 0.25), dark); radar.position.set(0, 5.0, -2.0); g.add(radar);
-  const turret = new THREE.Group(); turret.position.set(0, 1.4, 2.6); g.add(turret);
-  turret.add(inked(G.cyl(0.7, 0.8, 0.6, 8), grey, OUTLINE.thin));
-  const b = plain(G.cyl(0.1, 0.12, 2.0, 6), dark); b.rotation.x = Math.PI / 2; b.position.set(0, 0.15, 1.1); turret.add(b);
+  const g = new THREE.Group(), grey = camoMat('grey'), dark = mat(0x2c3138), white = mat(0xdde2e6), red = mat(0x8a2a24), glass = mat(0x22384c, { roughness: 0.2 }), orange = mat(0xff7a1a);
+  g.add(inked(heliSlab(-4.8, 3.2, 3.4, 1.7, 0.5, 2.8, 1.8, 0.6), grey, OUTLINE.mid));
+  g.add(inked(heliSlab(3.2, 6.3, 2.8, 1.8, 0.6, 0.15, 1.4, 1.0), grey, OUTLINE.thin)); // bow
+  g.add(plain(heliSlab(-4.8, 6.3, 3.45, 0.35, -0.2, 0.2, 0.3, 0.1), red)); // boot-top
+  g.add(plain(G.box(3.0, 0.06, 7.6), dark).translateY(1.42).translateZ(-0.6));
+  g.add(inked(G.box(2.4, 1.5, 3.0), white, OUTLINE.thin).translateY(2.15).translateZ(-1.2));
+  g.add(plain(G.box(2.45, 0.35, 2.6), glass).translateY(2.45).translateZ(-1.1));
+  g.add(inked(G.box(2.0, 0.9, 1.8), white, OUTLINE.thin).translateY(3.35).translateZ(-0.9));
+  g.add(plain(G.box(2.05, 0.35, 1.85), glass).translateY(3.4).translateZ(-0.9));
+  for (const sx of [-1, 1]) { const lr = plain(G.torus(0.28, 0.08, 4, 12), orange); lr.rotation.y = Math.PI / 2; lr.position.set(sx * 1.22, 2.2, -1.6); g.add(lr); }
+  for (const sx of [-1, 1]) for (let z = -4.2; z < 3; z += 1.2) g.add(plain(G.box(0.05, 0.5, 0.05), dark).translateX(sx * 1.6).translateY(1.7).translateZ(z)); // rail posts
+  for (const sx of [-1, 1]) g.add(plain(G.box(0.04, 0.04, 7.2), dark).translateX(sx * 1.6).translateY(1.95).translateZ(-0.6));
+  const mast = plain(G.cyl(0.07, 0.09, 2.6, 6), dark); mast.position.set(0, 4.9, -1.4); g.add(mast);
+  g.add(plain(G.box(1.4, 0.06, 0.06), dark).translateY(5.6).translateZ(-1.4));
+  const sl = plain(G.cyl(0.18, 0.2, 0.3, 8), white); sl.rotation.x = Math.PI / 2; sl.position.set(0.6, 3.95, -0.2); g.add(sl);
+  g.add(plain(G.sphere(0.07, 5, 4), glowMat(0xff3030)).translateY(6.25).translateZ(-1.4));
+  const radar = new THREE.Group(); radar.position.set(0, 6.0, -1.4); g.add(radar);
+  radar.add(plain(G.box(1.3, 0.1, 0.22), dark));
+  const turret = new THREE.Group(); turret.position.set(0, 1.45, 2.6); g.add(turret);
+  turret.add(inked(G.cyl(0.7, 0.8, 0.55, 10), grey, OUTLINE.thin));
+  turret.add(inked(G.box(1.1, 0.7, 0.2), grey, OUTLINE.thin).translateY(0.5).translateZ(0.4));
+  for (const sx of [-0.15, 0.15]) { const b = plain(G.cyl(0.08, 0.1, 2.0, 6), dark); b.rotation.x = Math.PI / 2; b.position.set(sx, 0.45, 1.3); turret.add(b); }
+  const mgm = plain(G.cyl(0.25, 0.3, 0.5, 8), dark); mgm.position.set(0, 1.7, -3.9); g.add(mgm);
+  for (const sx of [-0.1, 0.1]) { const b = plain(G.cyl(0.04, 0.04, 1.0, 5), dark); b.rotation.x = Math.PI / 2; b.position.set(sx, 2.0, -3.5); g.add(b); }
+  for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) { const dc = plain(G.cyl(0.22, 0.22, 0.5, 8), dark); dc.rotation.z = Math.PI / 2; dc.position.set(sx * 0.9, 1.65, -4.4 + k * 0.5); g.add(dc); }
+  const fp = plain(G.cyl(0.03, 0.03, 1.4, 4), dark); fp.position.set(0, 2.2, -4.7); g.add(fp);
+  g.add(plain(G.box(0.03, 0.4, 0.6), red).translateY(2.7).translateZ(-5.0));
   g.userData = { turret, radar };
   compact(g, [turret, radar]);
   return g;
@@ -252,9 +371,12 @@ export function createSaucer(scale = 1.3, hullColor = 0xc8cede) {
   for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2, l = new THREE.Mesh(G.sphere(0.14, 6, 4), glowMat(i % 2 ? 0xffe25a : 0xff5fa2)); l.position.set(Math.cos(a) * 1.85, -0.05, Math.sin(a) * 1.85); lights.add(l); }
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 2.6, 1, 14, 1, true), new THREE.MeshBasicMaterial({ color: 0x9dff7a, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide }));
   beam.visible = false;
-  g.add(disc, dome, pilot, lights);
+  const band = plain(G.cyl(2.02, 2.02, 0.12, 20), mat(0x5a5f70, { metalness: 0.7, roughness: 0.3 })); band.position.y = -0.02;
+  const under = new THREE.Mesh(G.torus(1.05, 0.11, 4, 20), glowMat(0x7aff5a)); under.rotation.x = Math.PI / 2; under.position.y = -0.42;
+  const pod = plain(G.sphere(0.55, 10, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0x3a3f4e, { metalness: 0.6 })); pod.position.y = -0.3;
+  g.add(disc, band, dome, pilot, lights, under, pod);
   g.scale.setScalar(scale);
-  g.userData = { lights, beam };
+  g.userData = { lights, beam, under };
   return g;
 }
 // The mothership: a saucer seven times over, with a ring of hangar lights and a big beam.
@@ -275,28 +397,43 @@ export function createJet() {
   for (const sx of [-1, 1]) { const fin = inked(heliSlab(-3.2, -1.8, 0.06, 1.3, 0.7, 0.06, 0.2, 0.3), dark, OUTLINE.thin); fin.rotation.z = sx * 0.35; fin.position.x = sx * 0.5; g.add(fin); }
   const can = inked(G.sphere(0.4, 8, 6), mat(0x7affc8, { emissive: 0x2a8a6a, emissiveIntensity: 0.6, transparent: true, opacity: 0.8 }), OUTLINE.thin); can.scale.set(0.8, 0.6, 1.6); can.position.set(0, 0.35, 1.6); g.add(can);
   const burner = plain(G.sphere(0.32, 6, 4), glowMat(0x6aff4a)); burner.position.z = -3.3; g.add(burner);
+  for (const [sx, c] of [[-1, 0xff3030], [1, 0x30ff60]]) g.add(plain(G.box(0.2, 0.12, 0.3), glowMat(c), false).translateX(sx * 3.55).translateY(0.08).translateZ(-2.35));
+  for (const sx of [-1, 1]) g.add(plain(G.box(0.08, 0.06, 2.2), glowMat(0x6aff4a), false).translateX(sx * 0.48).translateY(0.12).translateZ(0.3));
   g.userData = { burner };
   compact(g, [burner]);
   return g;
 }
 
-// ------------------------------------------------------------------ the tanker (Vertical-Vantage ship hull, stretched)
+// ------------------------------------------------------------------ the tanker (Vertical-Vantage ship hull, now a proper crude carrier)
 export function createTanker() {
   const g = new THREE.Group(), K = new Kit();
-  const hullC = 0x8a2a22, deck = 0x5a6a5a, white = 0xf0f0ec;
-  K.add('flat', box(11, 7, 50, { y: 2.5, color: hullC }), box(11.1, 2, 50.1, { y: 0.0, color: 0x1a1a22 }));
-  K.add('flat', part(heliSlab(25, 33, 11, 7, 2.5, 1, 6, 3.5), { color: hullC })); // bow
-  K.add('flat', box(10.4, 0.1, 56, { y: 6.05, z: 2, color: deck }));
-  for (let z = -18; z < 28; z += 6) K.add('flat', cyl(1.4, 1.4, 1.2, 8, { x: -2.6, y: 6.6, z, color: 0xc8c0a8 }), cyl(1.4, 1.4, 1.2, 8, { x: 2.6, y: 6.6, z, color: 0xc8c0a8 }));
-  K.add('flat', box(0.4, 0.4, 46, { x: 0, y: 6.5, z: 4, color: 0x8a8a8a }), box(0.3, 0.3, 46, { x: 0.8, y: 6.4, z: 4, color: 0xd8a020 }));
-  // bridge at the stern and the helipad in front of it (the LZ follows the tanker)
-  K.add('flat', box(9, 7, 6, { y: 9.5, z: -22, color: white }), box(9.1, 1.2, 6.1, { y: 11.6, z: -22, color: 0x22384c }), box(3, 0.3, 0.3, { y: 14, z: -21, color: 0x333333 }));
-  K.add('flat', cyl(0.5, 0.6, 3, 6, { x: 2.5, y: 14.5, z: -24, color: 0xd8302a }));
-  K.add('flat', box(9.4, 0.12, 9.4, { y: 6.12, z: -12, color: 0x3a3f46 }));
-  for (const [x, z, w, d] of [[-1.6, -12, 0.6, 4.2], [1.6, -12, 0.6, 4.2], [0, -12, 3, 0.6]]) K.add('glow', box(w, 0.05, d, { x, y: 6.2, z, color: 0xffe25a }));
-  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; K.add('glow', box(0.25, 0.1, 0.25, { x: Math.cos(a) * 4.2, y: 6.22, z: -12 + Math.sin(a) * 4.2, color: k % 2 ? 0x3ddc84 : 0xffe25a })); }
+  const top = 0x1e2a3a, bottom = 0x8a2a22, boot = 0xe8e8e0, deck = 0x3f5f4a, white = 0xf0f0ec, pipe = 0xb8b8b0;
+  K.add('flat', box(11, 4.4, 50, { y: 4.8, color: top }), box(11.06, 0.4, 50.06, { y: 2.5, color: boot }), box(11, 3.4, 50, { y: 0.6, color: bottom }));
+  K.add('flat', part(heliSlab(25, 33, 11, 4.4, 4.8, 1, 4.0, 5.3), { color: top }), part(heliSlab(25, 33, 11, 3.6, 1.0, 1, 3.0, 2.0), { color: bottom }));
+  K.add('flat', box(10.4, 0.1, 56, { y: 7.05, z: 2, color: deck }));
+  K.add('flat', box(9.6, 1.2, 6, { y: 7.6, z: 28, color: top }), cyl(0.5, 0.5, 0.6, 8, { x: -2, y: 8.5, z: 29, color: 0x3a3a3a }), cyl(0.5, 0.5, 0.6, 8, { x: 2, y: 8.5, z: 29, color: 0x3a3a3a })); // forecastle and windlasses
+  for (let z = -16; z < 26; z += 6) K.add('flat', cyl(1.3, 1.3, 0.8, 8, { x: -2.8, y: 7.5, z, color: 0xc8c0a8 }), cyl(1.3, 1.3, 0.8, 8, { x: 2.8, y: 7.5, z, color: 0xc8c0a8 }));
+  K.add('flat', box(0.4, 0.4, 44, { x: -0.6, y: 7.4, z: 4, color: pipe }), box(0.3, 0.3, 44, { x: 0.3, y: 7.35, z: 4, color: 0xd8a020 }), box(0.3, 0.3, 44, { x: 0.9, y: 7.35, z: 4, color: 0xe8e8e0 }));
+  K.add('flat', box(1.2, 0.12, 44, { x: 0, y: 8.6, z: 4, color: 0x8a8a8a }));
+  for (let z = -16; z < 26; z += 4) K.add('flat', box(0.12, 1.4, 0.12, { x: 0, y: 7.9, z, color: 0x6a6a6a }));
+  for (let x = -4.5; x <= 4.5; x += 1.5) K.add('flat', box(0.35, 0.35, 0.35, { x, y: 7.4, z: 5, color: 0xd8302a }), box(0.25, 0.25, 4, { x, y: 7.35, z: 5, color: pipe })); // the manifold
+  for (const sx of [-1, 1]) K.add('flat', cyl(0.25, 0.3, 4, 6, { x: sx * 4, y: 9, z: 5, color: 0xf2c21a }), box(0.25, 0.25, 4.4, { x: sx * 4, y: 10.8, z: 6.8, rx: -0.4, color: 0xf2c21a })); // hose cranes
+  // the accommodation block, bridge wings, funnel and mast at the stern
+  K.add('flat', box(10, 9, 7, { y: 11.5, z: -22, color: white }));
+  for (const y of [9, 11.4, 13.8]) K.add('flat', box(10.05, 0.6, 7.05, { y, z: -22, color: 0x22384c }));
+  K.add('flat', box(14, 0.5, 2.6, { y: 15.7, z: -19.6, color: white }), box(14.05, 0.8, 0.2, { y: 15.2, z: -18.3, color: 0x22384c }));
+  K.add('flat', box(3.4, 5, 3.4, { y: 18, z: -25, color: 0x2a2a2a }), box(3.45, 1.2, 3.45, { y: 17, z: -25, color: 0xf2c21a }), box(3.5, 0.6, 3.5, { y: 20.3, z: -25, color: 0x111111 }));
+  K.add('flat', cyl(0.12, 0.15, 5, 6, { y: 18.5, z: -21, color: 0x3a3c46 }), box(3, 0.15, 0.3, { y: 20.5, z: -21, color: 0x3a3c46 }));
+  for (const sx of [-1, 1]) K.add('flat', part(new THREE.CapsuleGeometry(0.9, 3.2, 2, 6), { x: sx * 5.9, y: 10.4, z: -21, rx: Math.PI / 2, color: 0xff7a1a }), box(0.2, 1.6, 0.2, { x: sx * 5.6, y: 11.4, z: -22.6, color: 0x6a6a6a }), box(0.2, 1.6, 0.2, { x: sx * 5.6, y: 11.4, z: -19.4, color: 0x6a6a6a }));
+  // the helipad in front of the bridge (the LZ follows the tanker)
+  K.add('flat', box(9.4, 0.12, 9.4, { y: 7.12, z: -12, color: 0x3a3f46 }));
+  for (const [x, z, w, d] of [[-1.6, -12, 0.6, 4.2], [1.6, -12, 0.6, 4.2], [0, -12, 3, 0.6]]) K.add('glow', box(w, 0.05, d, { x, y: 7.2, z, color: 0xffe25a }));
+  for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; K.add('glow', box(0.25, 0.1, 0.25, { x: Math.cos(a) * 4.2, y: 7.22, z: -12 + Math.sin(a) * 4.2, color: k % 2 ? 0x3ddc84 : 0xffe25a })); }
+  K.add('glow', box(0.3, 0.3, 0.3, { y: 21.2, z: -21, color: 0xff2a2a }), box(0.25, 0.25, 0.25, { x: -5, y: 8, z: 29, color: 0xff2a2a }), box(0.25, 0.25, 0.25, { x: 5, y: 8, z: 29, color: 0x3ddc84 }));
   kitMeshes(K, g);
-  return g;
+  g.position.y = -1; // (the hull sits a metre into the sea)
+  const root = new THREE.Group(); root.add(g);
+  return root;
 }
 
 // ------------------------------------------------------------------ small things
@@ -332,11 +469,11 @@ export function createCrate(kind) {
 // Returns merged, vertex-coloured geometries { body, legL, legR } plus the hip pivot heights, so all soldiers of
 // one look draw as three InstancedMeshes (view.js). Proportions are cosmic-calamity's (big head), scaled to ~1.9 m.
 const HUMAN = {
-  soldier: { suit: 0x5a6a3a, suitD: 0x3a4628, skin: 0xe8b890, helm: 0x4a5630, gun: 0x22222a, glowEye: null },
-  rpg: { suit: 0x6a5a3a, suitD: 0x463a28, skin: 0xd8a880, helm: 0x5a4a30, gun: 0x3a4a2a, tube: true },
+  soldier: { suit: 0x5a6a3a, suitD: 0x3a4628, skin: 0xe8b890, helm: 0x4a5630, gun: 0x22222a, glowEye: null, pack: 0x4a5230 },
+  rpg: { suit: 0x6a5a3a, suitD: 0x463a28, skin: 0xd8a880, helm: 0x5a4a30, gun: 0x3a4a2a, tube: true, pack: 0x5a4a30 },
   alien: { suit: 0xc8384a, suitD: 0x7a1e2c, skin: 0x6fd05a, gun: 0x22222a, glowEye: 0xffd23a, spikes: 0x3f9a3a },
   heavy: { suit: 0x6a58a0, suitD: 0x40346a, skin: 0x5fb04a, gun: 0x2a2a33, glowEye: 0xff4b5c, dome: 0x9aa0b4, big: 1.25 },
-  pilot: { suit: 0x34507a, suitD: 0x243858, skin: 0xf5c9a4, helm: 0xe8e8e0, gun: 0x22222a, visor: 0x2a2a3a },
+  pilot: { suit: 0x34507a, suitD: 0x243858, skin: 0xf5c9a4, helm: 0xe8e8e0, gun: 0x22222a, visor: 0x2a2a3a, vest: 0xff7a1a },
 };
 export function humanParts(kind) {
   const P = HUMAN[kind], S = 1.75 * (P.big || 1);
@@ -352,6 +489,11 @@ export function humanParts(kind) {
   if (P.glowEye) { b(bodyK, 0.2, 0.12, 0.14, 0, 0.83, 0.18, P.skin); b(bodyK, 0.3, 0.06, 0.01, 0, 0.91, 0.152, 0x111118); b(bodyK, 0.05, 0.035, 0.012, -0.08, 0.91, 0.158, P.glowEye); b(bodyK, 0.05, 0.035, 0.012, 0.08, 0.91, 0.158, P.glowEye); }
   if (P.spikes) for (const [x, h] of [[0, 0.16], [-0.09, 0.11], [0.09, 0.11]]) bodyK.push(cone(0.05 * S, h * S, 4, { x: x * S, y: (1.05 + h / 2) * S, z: -0.02 * S, color: P.spikes }));
   if (P.dome) bodyK.push(ball(0.2 * S, { x: 0, y: 0.98 * S, z: -0.02 * S, sy: 0.7, color: P.dome }));
+  if (P.pack) { b(bodyK, 0.26, 0.26, 0.1, 0, 0.56, -0.16, P.pack); b(bodyK, 0.2, 0.06, 0.08, 0, 0.42, -0.15, 0x2a2a20); } // pack and bedroll
+  if (P.helm && !P.visor) b(bodyK, 0.31, 0.03, 0.02, 0, 0.82, 0.152, 0x2a2a20); // chin strap
+  b(bodyK, 0.38, 0.045, 0.235, 0, 0.42, 0, 0x2a2a20); // belt
+  if (P.vest) { b(bodyK, 0.375, 0.2, 0.235, 0, 0.6, 0, P.vest); b(bodyK, 0.06, 0.06, 0.01, 0.1, 0.62, 0.12, 0xe8e8e8); }
+  if (P.glowEye && !P.dome) b(bodyK, 0.08, 0.08, 0.012, 0, 0.6, 0.116, P.glowEye); // alien chest light
   b(bodyK, 0.07, 0.08, 0.34, 0.23, 0.4, 0.22, P.gun); // the rifle
   if (P.tube) b(bodyK, 0.14, 0.14, 0.8, -0.18, 0.72, -0.05, 0x3a4a2a); // RPG tube on the shoulder
   const geo = (list) => { const g = mergeGeometries(list, false); g.computeBoundingSphere(); return g; };

@@ -9,6 +9,8 @@ import { FX } from './fx.js';
 import * as M from './models.js';
 import * as S from './structures.js';
 import { buildTown, CITY_ASSETS } from './city.js';
+import { buildDecor } from './decor.js';
+import { buildAtmos, updateAtmos } from './atmos.js';
 import { loadAssets, spawn, hasModel, tintMaterials, cloneMaterials } from './assets.js';
 import { mat } from './kit.js';
 import { playerPos, lzPos } from '../sim/world.js';
@@ -52,7 +54,7 @@ export class View {
       this.troops[k] = { P, body: mk(P.body), legL: mk(P.legL), legR: mk(P.legR), n: 0, cap: n };
     }
     // tracers: one InstancedMesh for every bullet-like round
-    this.tracers = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), 500);
+    this.tracers = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), 500); // glowing tracers
     this.tracers.setColorAt(0, _c.set(0xffffff)); this.tracers.frustumCulled = false; this.tracers.count = 0; scene.add(this.tracers);
     this.shotVis = new WeakMap(); this.shotPool = {}; this.mineVis = new WeakMap(); this.minePool = [];
     // the lock-on reticle (dr-mow's: a ring with four ticks, closing in as the lock builds)
@@ -81,13 +83,16 @@ export class View {
     const L = w.level, theme = (this.theme = L.theme), TH = THEMES[theme];
     this.scene.background = new THREE.Color(TH.sky);
     this.scene.fog = new THREE.Fog(TH.fog, TH.fogNear, TH.fogFar);
+    this.fx.setNight(!!TH.night);
     this.hemi.color.set(TH.hemiSky); this.hemi.groundColor.set(TH.hemiGround); this.hemi.intensity = this.hemiI = TH.hemiI;
     this.sun.color.set(TH.sun); this.sun.intensity = TH.sunI; this.sunDir = new THREE.Vector3(...TH.sunDir).normalize();
     // the gig pastels, toned to each mission
     tintMaterials(TH.night ? { grass: 0x2a4a2a, grass2: 0x22401f, sidewalk: 0x4a4a58 } : theme === 'dusk' ? { grass: 0x9a8a50, grass2: 0x8a7a44, sidewalk: 0xa89a8a } : { grass: 0x4a9a3a, grass2: 0x3a8a30, sidewalk: 0xb8b4c0 });
     const terr = buildTerrain(w.terrain, L, theme); this.root.add(terr);
-    if (terr.userData.minH < -0.5) { this.water = buildWater(theme); this.root.add(this.water); } else this.water = null;
-    this.root.add(buildTown(w, theme));
+    if (terr.userData.minH < -0.5) { this.water = buildWater(theme, w.terrain); this.root.add(this.water); } else this.water = null;
+    const town = buildTown(w, theme); this.root.add(town);
+    this.decor = buildDecor(w); this.root.add(this.decor);
+    this.atmos = buildAtmos(w, this.fx.glowTex, town.userData.lamps); this.root.add(this.atmos.group);
     // solids
     for (const b of w.solids) {
       if (b.kind.startsWith('bld_') || b.kind === 'lot_park') continue; // drawn by the town
@@ -129,8 +134,16 @@ export class View {
         : t === 'flak' ? M.createFlak() : t === 'sam' ? M.createLauncher() : t === 'battery' ? S.battery() : t === 'boomtower' ? S.boomTower() : t === 'generator' ? S.generator()
           : t === 'vault' ? S.vault() : t === 'dome' ? S.dome() : t === 'ctower' ? S.ctower() : t === 'fuelfarm' ? S.depot(true) : t === 'casino' ? S.casino(e.style, e.name, e.tint) : new THREE.Group();
       const b = e.boxes[0];
-      const rub = S.rubble(Math.max(6, b.hw * 2), Math.max(6, b.hd * 2), e.id); rub.visible = false; rub.position.set(e.x, e.y, e.z); this.root.add(rub);
+      const rub = S.rubble(Math.max(6, b.hw * 2), Math.max(6, b.hd * 2), e.id); rub.visible = false; rub.position.set(e.x, e.y, e.z); rub.rotation.y = e.yaw; this.root.add(rub);
       obj.userData.rubble = rub;
+      if (!['flak', 'sam', 'casino', 'generator', 'boomtower'].includes(t)) { // a concrete footing under the whole footprint
+        const c = Math.cos(e.yaw), sn = Math.sin(e.yaw);
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const q of e.boxes) { const dx = q.x - e.x, dz = q.z - e.z, lx = dx * c - dz * sn, lz = dx * sn + dz * c; x0 = Math.min(x0, lx - q.hw); x1 = Math.max(x1, lx + q.hw); z0 = Math.min(z0, lz - q.hd); z1 = Math.max(z1, lz + q.hd); }
+        const pad = t === 'datacenter' && e.style === 'hall' ? 5 : 2.6, f = S.foundation(x1 - x0 + pad * 2, z1 - z0 + pad * 2);
+        f.position.set(e.x + ((x0 + x1) / 2) * c + ((z0 + z1) / 2) * sn, e.y, e.z - ((x0 + x1) / 2) * sn + ((z0 + z1) / 2) * c); f.rotation.y = e.yaw;
+        this.root.add(f);
+      }
     } else if (k === 'tank' || k === 'hovertank') obj = M.createTank(k === 'hovertank');
     else if (k === 'tech') { obj = new THREE.Group(); if (hasModel('veh_pickup')) { const p = cloneMaterials(spawn('veh_pickup')); p.traverse((o) => { if (o.isMesh && (o.material.name === 'white' || o.material.name === 'orange')) o.material.color.set(o.material.name === 'white' ? 0xa8986a : 0x6a6a3a); }); obj.add(p); } const mg = M.createMG(); mg.position.set(0, 1.2, -1); obj.add(mg); obj.userData.gun = mg.userData.gun; }
     else if (k === 'civ') { obj = new THREE.Group(); if (hasModel(e.model)) obj.add(spawn(e.model)); }
@@ -138,7 +151,7 @@ export class View {
     else if (k === 'drone') obj = M.createDrone();
     else if (k === 'saucer') { obj = M.createSaucer(1.4); this.root.add(obj.userData.beam); }
     else if (k === 'mothership') { obj = M.createMothership(); this.root.add(obj.userData.beam); obj.userData.beam.scale.set(4, 1, 4); }
-    else if (k === 'gunship') obj = M.createApache(M.LIVERY.enemy);
+    else if (k === 'gunship') obj = M.createHind('desert');
     else if (k === 'agunship') obj = M.createAlienCopter(M.ALIEN_LIVERY.enemy);
     else if (k === 'jet') obj = M.createJet();
     else if (k === 'navmine') obj = M.createNavMine();
@@ -163,13 +176,36 @@ export class View {
       if (u.tube) u.tube.position.z = -(e.recoil = Math.max(0, (e.recoil || 0) - dt * 3)) * 0.4;
       if (u.tip) u.tip.visible = e.aimT > 0 && Math.floor(t * 12) % 2 === 0;
       if (u.spin) u.spin.rotation.y = t * 1.4;
-      if (u.rings) { u.rings.forEach((r, i) => { r.position.y = 4 + i * 1.1 + Math.sin(t * 3 + i) * 0.15; }); u.glow.color.setHSL(0.85 + Math.sin(t * 7) * 0.03, 1, 0.55 + Math.random() * 0.1); u.orb.scale.setScalar(0.9 + Math.random() * 0.3); }
+      if (u.rings) {
+        u.rings.forEach((r, i) => { r.position.y = 4 + i * 1.1 + Math.sin(t * 3 + i) * 0.15; }); u.glow.color.setHSL(0.85 + Math.sin(t * 7) * 0.03, 1, 0.55 + Math.random() * 0.1); u.orb.scale.setScalar(0.9 + Math.random() * 0.3);
+        if ((v.arcT = (v.arcT || 0) - dt) <= 0) {
+          v.arcT = 0.06 + Math.random() * 0.08;
+          const a = u.arcs.geometry.attributes.position;
+          for (let k = 0; k < 3; k++) {
+            const ang = Math.floor(Math.random() * 8) * (Math.PI / 4), ex = Math.cos(ang) * 3.4, ez = Math.sin(ang) * 3.4;
+            let px = 0, py = 8.6, pz = 0;
+            for (let j = 0; j < 7; j++) {
+              const f = (j + 1) / 7, nx = ex * f + (j < 6 ? (Math.random() - 0.5) * 0.9 : 0), ny = 8.6 + (3.7 - 8.6) * f + (j < 6 ? (Math.random() - 0.5) * 0.6 : 0), nz = ez * f + (j < 6 ? (Math.random() - 0.5) * 0.9 : 0);
+              const o = (k * 7 + j) * 2;
+              a.setXYZ(o, px, py, pz); a.setXYZ(o + 1, nx, ny, nz);
+              px = nx; py = ny; pz = nz;
+            }
+          }
+          a.needsUpdate = true;
+          if (Math.random() < 0.3) this.fx.glow(e.x, e.y + 8.6, e.z, 6, 0xff60ff, 0.1);
+        }
+      }
       if (u.beam) u.beam.material.opacity = 0.25 + Math.sin(t * 2) * 0.08;
       return;
     }
     if (k === 'tanker') {
       o.position.set(e.x, Math.sin(t * 0.8) * 0.15, e.z); o.rotation.y = e.yaw; o.rotation.z = Math.sin(t * 0.6) * 0.012;
-      if (Math.random() < 0.5) this.fx.puff(e.x + Math.sin(e.yaw) * 30 + (Math.random() - 0.5) * 8, 0.3, e.z + Math.cos(e.yaw) * 30, 0, 0, 0.8);
+      if (e.alive && Math.random() < 0.6) { // bow wave and a wake down both sides
+        const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw), side = Math.random() < 0.5 ? -1 : 1, along = -28 + Math.random() * 56;
+        this.fx.wake(e.x + fx * 31, e.z + fz * 31, 2.2, 1.4);
+        this.fx.wake(e.x + fx * along + fz * side * 6.2, e.z + fz * along - fx * side * 6.2, 1.6, 2.6);
+        this.fx.wake(e.x - fx * (30 + Math.random() * 10) + (Math.random() - 0.5) * 6, e.z - fz * (30 + Math.random() * 10), 3, 4);
+      }
       if (!e.alive && !v.sunk) { v.sunk = true; }
       if (v.sunk) o.position.y -= 1;
       return;
@@ -191,6 +227,7 @@ export class View {
       if (u.rotor) u.rotor.rotation.y += dt * 26;
       if (u.tail) u.tail.rotation.x += dt * 34;
       if (u.lights) u.lights.rotation.y += dt * 2;
+      if (u.under) u.under.material.color.setHSL(0.3, 1, 0.45 + Math.sin(t * 5 + e.id) * 0.15);
       if (u.rotors) for (const r of u.rotors) r.rotation.z += dt * 30;
       if (u.beam) {
         u.beam.visible = !!e.beam && e.alive;
@@ -207,14 +244,16 @@ export class View {
       if (u.gun && e.recoil) { e.recoil = Math.max(0, e.recoil - dt * 3); u.gun.position.z = 1.1 - e.recoil * 0.5; }
     }
     if (k === 'tech' && u.gun && e.tyaw != null) u.gun.rotation.y = e.tyaw;
+    if (u.tracks && e.alive) { const sp = Math.hypot(e.vx || 0, e.vz || 0); for (const m of u.tracks) m.map.offset.y = (m.map.offset.y - sp * dt * 0.18) % 1; if (sp > 1 && Math.random() < 0.25) this.fx.dust(e.x - Math.sin(e.yaw) * 3, e.y + 0.3, e.z - Math.cos(e.yaw) * 3, 1, 0.9); }
+    if (u.radar) u.radar.rotation.y += dt * 2.5;
     if (k === 'navmine') { o.position.y = e.y; o.rotation.y = t * 0.3; }
-    if (k === 'boat' && e.alive && Math.random() < 0.4) this.fx.puff(e.x - Math.sin(e.yaw) * 5, 0.3, e.z - Math.cos(e.yaw) * 5, 0, 0, 0.6);
+    if (k === 'boat' && e.alive && Math.random() < 0.7) { const sp = Math.hypot(e.vx || 0, e.vz || 0); this.fx.wake(e.x - Math.sin(e.yaw) * 5 + (Math.random() - 0.5) * 2, e.z - Math.cos(e.yaw) * 5, 1.2 + sp * 0.12, 2.6); if (sp > 2) this.fx.wake(e.x + Math.sin(e.yaw) * 6, e.z + Math.cos(e.yaw) * 6, 1, 0.8); }
     if (!e.alive && !v.burnt && k !== 'boat') {
       v.burnt = true;
       o.traverse((m) => { if (m.isMesh && !m.userData.hull) m.material = BURNT; });
       if (u.turret) { u.turret.position.y += 0.6; u.turret.rotation.z = 0.5; }
     }
-    if (!e.alive && k !== 'boat' && (v.smokeT -= dt) <= 0 && e.deadT < 10) { v.smokeT = 0.25; this.fx.smoke(e.x, e.y + 1.5, e.z, 1.2, true, 3, 2); }
+    if (!e.alive && k !== 'boat' && (v.smokeT -= dt) <= 0 && e.deadT < 12) { v.smokeT = 0.2; this.fx.smoke(e.x, e.y + 1.5, e.z, 1.2, true, 3, 2); if (e.deadT < 7 && !INF.includes(k)) { this.fx.flame(e.x + (Math.random() - 0.5) * 2, e.y + 1.4, e.z + (Math.random() - 0.5) * 2, 0.7); this.fx.glow(e.x, e.y + 2, e.z, 5, 0xff7a30, 0.25); } }
   }
 
   ground(w, x, z) { return w.terrain.surface(x, z); }
@@ -246,8 +285,10 @@ export class View {
     if (this.roof) { const u = this.roof.userData, open = (u.open = damp(u.open, w.shield ? 0 : 1, 1.2, dt)); for (const h of u.halves) h.g.position.x = h.s * open * u.hw; }
     if (this.boom) { const towers = w.ents.filter((e) => e.type === 'boomtower'), down = towers.filter((e) => !e.alive).length; this.boom.visible = down < towers.length; this.boom.position.y = down ? -0.8 : 0; }
     if (this.searchlights) this.searchlights.forEach((s, i) => { s.userData.pivot.rotation.z = Math.sin(t * 0.4 + i * 1.7) * 0.6; s.userData.pivot.rotation.x = Math.cos(t * 0.33 + i) * 0.5; });
-    if (this.water) { const tx = this.water.userData.tex; tx.offset.x = (t * 0.004) % 1; tx.offset.y = (t * 0.0025) % 1; }
-    this.fx.update(dt);
+    if (this.water) this.water.userData.uniforms.uTime.value = t;
+    if (this.decor) this.decor.userData.wind.uTime.value = t;
+    updateAtmos(this.atmos, w, this.fx, this.focus, dt, t);
+    this.fx.update(dt, this.camera.quaternion);
     this.hemi.intensity = this.hemiI + this.fx.flashK * 0.8;
     this.updateCamera(w, dt);
     this.renderer.render(this.scene, this.camera);
@@ -320,9 +361,9 @@ export class View {
       used.add(m);
       m.position.set(s.x, s.y, s.z);
       _v.set(s.vx, s.vy, s.vz).normalize(); m.quaternion.setFromUnitVectors(_w.set(0, 0, 1), _v);
-      if (s.kind === 'orb') { this.fx.glowPuff(s.x, s.y, s.z, 0x3dfff0, 0.35); }
+      if (s.kind === 'orb') { this.fx.glowPuff(s.x, s.y, s.z, 0x3dfff0, 0.35); this.fx.glow(s.x, s.y, s.z, 3, 0x3dfff0, 0.05); }
       else if (s.kind === 'bomb') { /* falls */ }
-      else { this.fx.flame(s.x - _v.x, s.y - _v.y, s.z - _v.z, s.kind === 'sam' ? 0.45 : 0.3); if (Math.random() < 0.8) this.fx.puff(s.x - _v.x * 1.5, s.y - _v.y * 1.5, s.z - _v.z * 1.5, 0, 0, s.kind === 'sam' ? 0.5 : 0.32); }
+      else { this.fx.flame(s.x - _v.x, s.y - _v.y, s.z - _v.z, s.kind === 'sam' ? 0.45 : 0.3); this.fx.glow(s.x - _v.x, s.y - _v.y, s.z - _v.z, s.kind === 'sam' ? 3.2 : 2.2, 0xffb050, 0.06); if (Math.random() < 0.8) this.fx.puff(s.x - _v.x * 1.5, s.y - _v.y * 1.5, s.z - _v.z * 1.5, 0, 0, s.kind === 'sam' ? 0.5 : 0.32); }
       if (m.userData.light) m.userData.light.material.color.set(Math.floor(this.t * 14) % 2 ? 0xff2020 : 0x661010);
     }
     this.tracers.count = n; this.tracers.instanceMatrix.needsUpdate = true; if (this.tracers.instanceColor) this.tracers.instanceColor.needsUpdate = true;

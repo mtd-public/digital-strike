@@ -147,6 +147,7 @@ export const KM = {
   flat: new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
   glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
   glass: new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, transparent: true, opacity: 0.85 }),
+  chain: new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }), // chain-link fencing
 };
 // Turn a Kit into meshes under a group.
 export function kitMeshes(K, group, shadow = true) {
@@ -154,7 +155,7 @@ export function kitMeshes(K, group, shadow = true) {
   for (const k in built) {
     if (!built[k]) continue;
     const m = new THREE.Mesh(built[k], KM[k] || KM.flat);
-    m.castShadow = shadow && k !== 'glow'; m.receiveShadow = k === 'flat';
+    m.castShadow = shadow && k !== 'glow' && k !== 'chain'; m.receiveShadow = k === 'flat';
     m.userData.kitKey = k;
     group.add(m);
   }
@@ -171,9 +172,10 @@ export function compact(root, keep = []) {
   root.traverse((o) => {
     if (!o.isMesh || skip.has(o) || o.material.transparent) return;
     const g = o.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
-    for (const a of Object.keys(g.attributes)) if (a !== 'position' && a !== 'normal' && a !== 'color') g.deleteAttribute(a);
+    const keepUv = !!o.material.map && !!g.attributes.uv; // textured parts (camo, tracks) keep their UVs
+    for (const a of Object.keys(g.attributes)) if (a !== 'position' && a !== 'normal' && a !== 'color' && !(keepUv && a === 'uv')) g.deleteAttribute(a);
     if (!g.attributes.color && o.material.vertexColors) return;
-    const key = o.material.uuid + (g.attributes.color ? 'c' : '');
+    const key = o.material.uuid + (g.attributes.color ? 'c' : '') + (keepUv ? 'u' : '');
     if (!buckets.has(key)) buckets.set(key, { material: o.material, geos: [], shadow: o.castShadow });
     buckets.get(key).geos.push(g.index ? g.toNonIndexed() : g);
     victims.push(o);

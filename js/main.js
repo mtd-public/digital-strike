@@ -109,14 +109,18 @@ $('brief-back').onclick = () => showTitle();
 $('brief-go').onclick = () => launch();
 function launch() { sfx.unlock(); startMission(state.level); }
 
+function setTheme(L) { document.body.dataset.theme = L.theme; }
+document.body.classList.toggle('crt', RETRO);
 function startAttract() {
   state.attract = true; state.mem = {};
   state.w = createWorld(LEVELS[0], { seed: (Math.random() * 1e9) | 0, god: true, craft: 'apache' });
+  setTheme(LEVELS[0]);
   view.build(state.w);
 }
 function startMission(L) {
   state.attract = false; state.mem = {}; state.acc = 0; state.endT = 0;
   state.w = createWorld(L, { seed: (Math.random() * 1e9) | 0, craft: state.craft });
+  setTheme(L);
   view.build(state.w);
   state.mode = 'playing'; show(null); hud.show(true);
   input.reset();

@@ -70,8 +70,11 @@ js/render/                    three.js only
   models.js                   Apache, XH-0, tanks, boats, drones, saucers, jets, tanker, missiles, troopers
   structures.js               data centers, radar, barracks, depots, generators, casinos, Hangar 18, pads, piers
   city.js, assets.js          gig-ambulance GLB town: road fitting, lots, greenery, static baking
-  terrain-view.js             terrain mesh, sea, per-mission palettes
-  fx.js, kit.js               pooled instanced particles; the model kit (toy materials, outlines, vertex-colour Kit)
+  terrain-view.js             terrain mesh (grain texture, beach / rock blends), the sea shader (depth, waves, shore foam), palettes
+  decor.js                    grass tufts that sway in the wind, boulders, dirt tracks along the vehicle routes
+  atmos.js                    cloud shadows, glow points (beacons, floodlights, lamps), gulls, desert dust
+  fx.js, kit.js               pooled instanced particles, billboard fire / smoke, glows, wakes, pooled explosion lights;
+                              the model kit (toy materials, outlines, vertex-colour Kit)
 js/hud.js, js/input.js, js/sfx-synth.js, js/retro.js
 tools/sim-check.mjs           headless checks: spawns, every mission won by the autopilot, every weapon does damage
 tools/smoke.mjs               Playwright: phone, phone landscape, tablet, desktop; 0 console errors, 0 page scroll

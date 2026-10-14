@@ -45,6 +45,34 @@ function hallBody(K, cx, cz, w, d, H, neon) {
     K.add('glow', box(f.tx ? f.width + 0.5 : 0.16, 0.22, f.tz ? f.width + 0.5 : 0.16, { x: cx + f.nx * (f.half + 0.14), y: H - 0.4, z: cz + f.nz * (f.half + 0.14), color: neon }));
   }
 }
+// A security fence round [x0, x1] × [z0, z1]: posts every 3 m, two rails and a barbed top wire, a gate gap
+// `gate` wide in the middle of the front (+z) side.
+export function fence(K, x0, x1, z0, z1, gate = 0) {
+  const sides = [[x0, z1, x1, z1, true], [x0, z0, x1, z0], [x0, z0, x0, z1], [x1, z0, x1, z1]];
+  for (const [ax, az, bx, bz, front] of sides) {
+    const L = Math.hypot(bx - ax, bz - az), n = Math.round(L / 3), ry = Math.atan2(-(bz - az), bx - ax);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+      if (front && Math.abs(x - (x0 + x1) / 2) < gate / 2) continue;
+      K.add('flat', box(0.12, 2.6, 0.12, { x, y: 1.3, z, color: 0x7a8088 }));
+    }
+    const spans = front && gate ? [[ax, (x0 + x1) / 2 - gate / 2], [(x0 + x1) / 2 + gate / 2, bx]] : [[0, 0]];
+    for (const [s0, s1] of spans) {
+      const sx0 = front && gate ? s0 : ax, sx1 = front && gate ? s1 : bx, sz0 = front && gate ? az : az, sz1 = front && gate ? bz : bz;
+      const len = Math.hypot(sx1 - sx0, sz1 - sz0), mx = (sx0 + sx1) / 2, mz = (sz0 + sz1) / 2;
+      for (const [y, c, th] of [[0.9, 0x9aa0a8, 0.05], [2.0, 0x9aa0a8, 0.05], [2.6, 0x2a2a2a, 0.07]]) K.add('flat', box(len, th, th, { x: mx, y, z: mz, ry, color: c }));
+      K.add('chain', box(len, 1.9, 0.02, { x: mx, y: 1.45, z: mz, ry, color: 0x8a9098 })); // the chain-link, see-through
+    }
+  }
+}
+// A concrete footing under a building: a slab poking out of the ground with a darker skirt, so buildings
+// sit in the terrain instead of on it.
+export function foundation(w, d) {
+  const g = new THREE.Group(), K = new Kit();
+  K.add('flat', box(w, 2.2, d, { y: -0.85, color: 0x6e6a60 }), box(w - 0.3, 0.06, d - 0.3, { y: 0.27, color: 0x8e8a7e }));
+  for (const [x, z] of [[-w / 2 + 0.6, -d / 2 + 0.6], [w / 2 - 0.6, -d / 2 + 0.6], [-w / 2 + 0.6, d / 2 - 0.6], [w / 2 - 0.6, d / 2 - 0.6]]) K.add('flat', box(0.9, 0.08, 0.25, { x, y: 0.3, z, color: 0xf2c21a }), box(0.25, 0.08, 0.9, { x, y: 0.3, z, color: 0xf2c21a }));
+  return kitMeshes(K, g);
+}
 export function dataHall(tint = 0) {
   const g = new THREE.Group(), K = new Kit(), neon = NEON[tint % 4];
   hallBody(K, 0, 0, 22, 14, 7.5, neon);
@@ -52,6 +80,12 @@ export function dataHall(tint = 0) {
   coolingTower(K, -7.5, -11, 3.3, 9, neon); coolingTower(K, 0, -11, 3.3, 9, neon);
   lattice(K, 8.5, -10.5, 2.6, 17);
   K.add('flat', box(9, 0.6, 1.2, { x: -3.8, y: 0.3, z: -7.6, color: 0x7a828e })); // cable tray to the towers
+  // a satellite dish on the roof, condensers along the side
+  K.add('flat', part(new THREE.CylinderGeometry(1.4, 0.3, 0.5, seg(12, 8), 1, true), { x: -8, y: 9.2, z: -3.5, rx: -0.9, color: 0xe4e8ec }), cyl(0.12, 0.15, 1.6, 6, { x: -8, y: 8.3, z: -3.2, color: 0x8a929e }));
+  for (let z = -4.5; z <= 4.5; z += 3) K.add('flat', box(1.6, 1.3, 2.2, { x: 12.6, y: 0.65, z, color: 0xc8ccd2 }), cyl(0.55, 0.55, 0.06, 8, { x: 12.6, y: 1.33, z, color: 0x22252e }));
+  // the perimeter fence (gate in front) and floodlight poles at the corners
+  fence(K, -16, 16, -17, 12, 3.5);
+  for (const [x, z] of [[-14, 9], [14, 9], [-14, -9], [14, -9]]) { K.add('flat', cyl(0.12, 0.16, 6, 6, { x, y: 3, z, color: 0x8a929e }), box(0.8, 0.35, 0.5, { x, y: 6.1, z, color: 0x3a3f48 })); K.add('glow', box(0.7, 0.08, 0.4, { x, y: 5.9, z, color: 0xfff2c8 })); }
   for (let i = 0; i < 5; i++) K.add('flat', cyl(0.14, 0.14, 8.6, 5, { x: -3.8, y: 0.75, z: -7.4 + (i - 2) * 0.22, rz: Math.PI / 2, color: [0x2a6ab8, 0xc8302a, 0x16181e, 0xf2c21a, 0x3a8a4a][i] }));
   return kitMeshes(K, g);
 }
@@ -67,6 +101,11 @@ export function dataCore(tint = 1) {
   K.add('flat', box(0.4, 8, 0.4, { x: w / 2 - 1, y: H + 4, z: w / 2 - 1, color: 0x8a929e }));
   for (const y of [H + 3, H + 6, H + 8.2]) K.add('glow', box(0.45, 0.45, 0.45, { x: w / 2 - 1, y, z: w / 2 - 1, color: RED }));
   hallBody(K, -11, 0, 7, 22, 6, neon); hallBody(K, 11, 0, 7, 22, 6, neon);
+  for (const sx of [-1, 1]) {
+    K.add('flat', part(new THREE.CylinderGeometry(1.1, 0.25, 0.4, seg(12, 8), 1, true), { x: sx * 11, y: 7.4, z: -6, rx: -0.9, color: 0xe4e8ec }));
+    for (const z of [2, 6]) K.add('flat', box(2.4, 0.9, 1.8, { x: sx * 11, y: 6.75, z, color: 0xc8ccd2 }), cyl(0.5, 0.5, 0.06, 8, { x: sx * 11, y: 7.22, z, color: 0x22252e }));
+  }
+  K.add('flat', box(5, 0.1, 5, { y: H + 0.47, color: 0x2a6ab8 })); K.add('glow', box(0.6, 0.06, 3, { x: -1, y: H + 0.55, color: 0xffd23a }), box(0.6, 0.06, 3, { x: 1, y: H + 0.55, color: 0xffd23a }), box(1.4, 0.06, 0.6, { y: H + 0.55, color: 0xffd23a })); // roof helipad
   return kitMeshes(K, g);
 }
 
@@ -92,6 +131,8 @@ export function barracks() {
   K.add('flat', box(2, 2.4, 0.2, { y: 1.2, z: 4.05, color: 0x3a3428 }));
   for (let i = -6; i <= 6; i += 2) K.add('flat', box(1.2, 0.5, 0.6, { x: i, y: 0.25, z: 5.2, color: 0xb8a878 }));
   K.add('flat', cyl(0.06, 0.06, 6, 4, { x: 6, y: 3, z: -3, color: 0x888888 }), box(1.6, 1, 0.05, { x: 6.8, y: 5.4, z: -3, color: 0xc8302a }));
+  for (const [x, z, c] of [[-7.6, 3.4, 0x3a5a3a], [-7.6, 2.4, 0x5a3a2a], [-6.9, 3.0, 0x3a5a3a]]) K.add('flat', cyl(0.32, 0.32, 0.95, 8, { x, y: 0.47, z, color: c }));
+  for (const [x, z] of [[7.8, 2.8], [7.8, 1.6]]) K.add('flat', box(1.0, 0.8, 1.0, { x, y: 0.4, z, color: 0x7a6a40 }), box(1.02, 0.08, 1.02, { x, y: 0.62, z, color: 0x4a3a20 }));
   return kitMeshes(K, g);
 }
 export function depot(white = false) {
@@ -140,7 +181,10 @@ export function generator() {
   const rings = [];
   for (let i = 0; i < 4; i++) { const r = new THREE.Mesh(G.torus(1.3 - i * 0.18, 0.12, 4, 16), glow); r.rotation.x = Math.PI / 2; r.position.y = 4 + i * 1.1; g.add(r); rings.push(r); }
   const orb = new THREE.Mesh(G.sphere(0.8, 10, 8), glow); orb.position.y = 8.6; g.add(orb);
-  g.userData = { rings, orb, glow };
+  // electric arcs crackling from the orb down to the pylons (re-jagged every few frames in view.js)
+  const arcs = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 7 * 2 * 3), 3)), new THREE.LineBasicMaterial({ color: 0xffa0ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  arcs.frustumCulled = false; g.add(arcs);
+  g.userData = { rings, orb, glow, arcs };
   return g;
 }
 
@@ -295,9 +339,12 @@ export function pier(L, w) {
 }
 export function rubble(w, d, seed = 1) {
   const g = new THREE.Group(), K = new Kit();
-  let s = seed;
+  let s = seed * 7919 + 1;
   const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 14; i++) K.add('flat', box(1 + r() * 3, 0.4 + r() * 1.6, 1 + r() * 3, { x: (r() - 0.5) * w, y: 0.4, z: (r() - 0.5) * d, ry: r() * 3, rx: (r() - 0.5) * 0.6, color: [0x2a2622, 0x3a342e, 0x1a1816][i % 3] }));
+  K.add('flat', part(new THREE.CircleGeometry(1, 10), { rx: -Math.PI / 2, y: 0.05, sx: w * 0.75, sy: d * 0.75, color: 0x14110e })); // the scorch
+  for (let i = 0; i < 16; i++) K.add('flat', box(1 + r() * 3, 0.4 + r() * 1.6, 1 + r() * 3, { x: (r() - 0.5) * w, y: 0.4, z: (r() - 0.5) * d, ry: r() * 3, rx: (r() - 0.5) * 0.6, color: [0x2a2622, 0x3a342e, 0x1a1816, 0x4a443c][i % 4] }));
+  for (let i = 0; i < 7; i++) K.add('flat', box(0.18, 0.18, 2 + r() * 4, { x: (r() - 0.5) * w * 0.8, y: 0.8 + r() * 1.5, z: (r() - 0.5) * d * 0.8, rx: (r() - 0.5) * 1.6, ry: r() * 3, rz: (r() - 0.5) * 0.8, color: [0x5a2a1a, 0x3a3a3a][i % 2] })); // twisted girders
+  for (let i = 0; i < 4; i++) K.add('glow', box(0.6 + r(), 0.1, 0.6 + r(), { x: (r() - 0.5) * w * 0.6, y: 0.5, z: (r() - 0.5) * d * 0.6, ry: r() * 3, color: 0xff6a20 })); // embers
   return kitMeshes(K, g);
 }
 export function searchlight() {
