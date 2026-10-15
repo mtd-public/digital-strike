@@ -6,10 +6,12 @@
 //   createDrone         cosmic-calamity js/render3d.js makeDrone
 //   humanParts          cosmic-calamity makeHuman (troopers, the reptilian grunt / heavy, Snake for the pilot)
 //   createAlienCopter, createTank, createBoat, createJet, createTanker, createFlak, crates: new, in the same kit
+//   createWalker, createCrawler   mission 6's spider tanks and bomb bots (legs from render/legs.js)
 import * as THREE from 'three';
 import { mat, glowMat, inked, plain, OUTLINE, G, Kit, box, cyl, ball, cone, part, kitMeshes, compact, canvasTex } from './kit.js';
 import { RETRO } from '../retro.js';
 import { mergeGeometries } from '../vendor/addons/BufferGeometryUtils.js';
+import { LegRig, LEG_STYLE } from './legs.js';
 
 // A box running along Z from z0 (back) to z1 (front) whose width, height and centre height change along it.
 export function heliSlab(z0, z1, wb, hb, yb, wf, hf, yf) {
@@ -498,4 +500,55 @@ export function humanParts(kind) {
   if (P.tube) b(bodyK, 0.14, 0.14, 0.8, -0.18, 0.72, -0.05, 0x3a4a2a); // RPG tube on the shoulder
   const geo = (list) => { const g = mergeGeometries(list, false); g.computeBoundingSphere(); return g; };
   return { body: geo(bodyK), legL: geo(legL), legR: geo(legR), hipY: 0.36 * S, hipX: 0.09 * S, scale: S };
+}
+
+// ------------------------------------------------------------------ mission 6: the enemy's spider tanks (new)
+// WIDOW walker: a flat armoured hull on six legs (render/legs.js), a turret with a long cannon whose muzzle
+// glows before it fires, rocket pods either side, red sensor eyes. The leg rig lives in world space, so the
+// renderer adds userData.rig.group to the scene beside the hull.
+export function createWalker() {
+  const g = new THREE.Group(), hull = new THREE.Group(); g.add(hull);
+  const camo = camoMat('grey'), dark = mat(0x2a2624, { metalness: 0.3 }), plate = mat(0x6a5a48), red = mat(0xd8302a);
+  hull.add(inked(heliSlab(-2.6, 2.4, 4.2, 1.3, 0, 3.4, 1.0, 0.1), camo, OUTLINE.mid));
+  hull.add(inked(heliSlab(-2.8, -2.0, 3.6, 0.9, 0.1, 4.0, 1.1, 0.1), plate, OUTLINE.thin)); // rear engine deck
+  const belly = plain(G.cyl(2.1, 1.7, 0.6, 10), dark); belly.position.y = -0.85; hull.add(belly);
+  for (const sx of [-1, 1]) { const grille = plain(new THREE.BoxGeometry(0.9, 0.08, 1.6), dark); grille.position.set(sx * 1.0, 0.56, -2.0); hull.add(grille); }
+  const eyes = glowMat(0xff2a1a);
+  for (const sx of [-0.6, 0, 0.6]) { const e = plain(G.sphere(0.16, 8, 6), eyes, false); e.position.set(sx, 0.15, 2.45); hull.add(e); }
+  const turret = new THREE.Group(); turret.position.y = 0.95; hull.add(turret);
+  turret.add(inked(heliSlab(-1.6, 1.5, 2.6, 0.9, 0.35, 2.0, 0.7, 0.3), camo, OUTLINE.mid));
+  const gun = new THREE.Group(); gun.position.set(0, 0.45, 1.4); turret.add(gun);
+  const barrel = plain(G.cyl(0.17, 0.2, 4.6, 8), dark); barrel.rotation.x = Math.PI / 2; barrel.position.z = 2.3; gun.add(barrel);
+  const brake = plain(new THREE.BoxGeometry(0.55, 0.42, 0.6), dark); brake.position.z = 4.6; gun.add(brake);
+  const tip = new THREE.Mesh(G.sphere(0.42, 8, 6), glowMat(0xffa040)); tip.position.z = 5.1; tip.visible = false; gun.add(tip);
+  const pods = [];
+  for (const sx of [-1, 1]) {
+    const pod = new THREE.Group(); pod.position.set(sx * 1.75, 0.6, 0); turret.add(pod); pods.push(pod);
+    pod.add(inked(new THREE.BoxGeometry(0.8, 0.8, 1.6), plate, OUTLINE.thin));
+    for (const ox of [-0.18, 0.18]) for (const oy of [-0.18, 0.18]) { const f = plain(new THREE.CircleGeometry(0.12, 6), red); f.position.set(ox, oy, 0.81); pod.add(f); }
+  }
+  const mast = plain(G.cyl(0.04, 0.04, 1.8, 4), dark); mast.position.set(-0.8, 1.3, -1.2); turret.add(mast);
+  const beacon = plain(G.sphere(0.1, 6, 4), glowMat(0xff3030), false); beacon.position.set(-0.8, 2.2, -1.2); turret.add(beacon);
+  const rig = new LegRig({ style: LEG_STYLE.widow, s: 1.6, hipY: -0.55, hipR: 1.5, footR: 3.7, L1: 2.1, L2: 2.9 });
+  g.userData = { hull, turret, gun, tip, pods, rig, H: 4.6 };
+  compact(hull, [turret]); compact(turret, [gun, ...pods]);
+  return g;
+}
+// Crawler: a bomb on six legs. Two merged sets of legs scissor in turn so it scuttles; the eye blinks.
+export function createCrawler() {
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  const shell = mat(0x3a3a3c, { metalness: 0.4, roughness: 0.45 }), dark = mat(0x1e1e20), hazard = mat(0xd8a020);
+  const dome = inked(G.sphere(0.75, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), shell, OUTLINE.thin); dome.scale.set(1, 0.6, 1.2); dome.position.y = 0.45; body.add(dome);
+  const skirt = plain(G.cyl(0.8, 0.7, 0.22, 10), hazard); skirt.scale.z = 1.2; skirt.position.y = 0.42; body.add(skirt);
+  const eye = new THREE.Mesh(G.sphere(0.16, 8, 6), glowMat(0xff2a1a)); eye.position.set(0, 0.62, 0.8); body.add(eye);
+  const sets = [new THREE.Group(), new THREE.Group()];
+  [0.8, -0.8, 1.6, -1.6, 2.4, -2.4].forEach((a, i) => {
+    const leg = new THREE.Group(); leg.rotation.y = a; sets[[0, 1, 1, 0, 0, 1][i]].add(leg);
+    const thigh = plain(new THREE.BoxGeometry(0.1, 0.1, 0.8), dark); thigh.position.set(0, 0.62, 0.95); thigh.rotation.x = -0.5; leg.add(thigh);
+    const shin = plain(new THREE.BoxGeometry(0.08, 0.08, 0.75), dark); shin.position.set(0, 0.3, 1.45); shin.rotation.x = 0.95; leg.add(shin);
+  });
+  for (const s of sets) { compact(s); body.add(s); }
+  compact(body, [eye, ...sets]);
+  g.userData = { body, sets, eye };
+  return g;
 }

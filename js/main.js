@@ -25,26 +25,30 @@ if (/[?&]unlock=1/.test(location.search)) progress.proto = true;
 const canvas = $('game');
 const view = new View(canvas), hud = new Hud(), input = new InputManager(canvas), sfx = new Sfx({ volume: 0.7 });
 const S = settings();
-const state = { mode: 'loading', level: LEVELS[0], craft: progress.proto && S.craft === 'alien' ? 'alien' : 'apache', w: null, attract: false, mem: {}, acc: 0, endT: 0, action: false, muted: !!S.muted };
+const state = { mode: 'loading', level: LEVELS[0], craft: progress.proto && S.craft === 'alien' ? 'alien' : 'apache', w: null, attract: false, mem: {}, acc: 0, endT: 0, action: false, xform: false, muted: !!S.muted, fireHint: false };
 view.setCamMode(S.cam === 'strike' ? 'strike' : 'iso');
 sfx.setMuted(state.muted);
 
 // ---------------------------------------------------------------- input wiring
 const queueAction = () => { state.action = true; };
-input.bindButton($('btn-gun'), 'gun', () => sfx.unlock());
-input.bindButton($('btn-msl'), 'msl');
+const queueXform = () => { state.xform = true; };
+input.onPointer = () => sfx.unlock(); // (the chain gun is the right side of the screen: input.js)
+input.bindButton($('btn-msl'), 'msl', () => sfx.unlock());
 input.bindButton($('btn-mine'), 'mine');
 input.bindButton($('btn-action'), null, queueAction);
+input.bindButton($('btn-xform'), null, queueXform);
 input.onKey = (k) => {
   sfx.unlock();
   if (k === 'c') toggleCam();
   else if (k === 'p' || k === 'escape') { if (state.mode === 'playing') setPaused(true); else if (state.mode === 'paused') setPaused(false); }
   else if (k === 'm') toggleMute();
   else if (k === 'e' || k === 'f') queueAction();
+  else if (k === 't') queueXform();
   else if (k === 'enter' && state.mode === 'brief') launch();
 };
 input.onPad = (b) => {
   if (b === 'action') { if (state.mode === 'brief') launch(); else queueAction(); }
+  else if (b === 'xform') queueXform();
   else if (b === 'cam') toggleCam();
   else if (b === 'pause') { if (state.mode === 'playing') setPaused(true); else if (state.mode === 'paused') setPaused(false); else if (state.mode === 'title') openBrief(state.level); }
   else if (b === 'mute') toggleMute();
@@ -61,8 +65,8 @@ for (const b of [$('pause-btn'), $('cam-btn'), $('mute-btn')]) b.addEventListene
 // world with the camera's screen vectors (screen-up stretched for the pitch). Strike cam: tank controls.
 function buildInput() {
   const pad = input.pad(), s = input.read(pad), strike = view.camMode === 'strike';
-  const inp = { gun: input.gun || !!pad?.gun, msl: input.msl || !!pad?.msl, mine: input.mine || !!pad?.mine, action: state.action, aim: null, mx: 0, mz: 0 };
-  state.action = false;
+  const inp = { gun: input.gun || !!pad?.gun, msl: input.msl || !!pad?.msl, mine: input.mine || !!pad?.mine, action: state.action, xform: state.xform, aim: null, mx: 0, mz: 0 };
+  state.action = false; state.xform = false;
   const R = view.screenRight, U = view.screenUp, k = view.screenUpK || 1.3;
   const toWorld = (sx, sy) => { const wx = R.x * sx + U.x * -sy * k, wz = R.y * sx + U.y * -sy * k, n = Math.hypot(wx, wz) || 1; return [wx / n, wz / n]; };
   if (strike) {
@@ -123,8 +127,9 @@ function startMission(L) {
   setTheme(L);
   view.build(state.w);
   state.mode = 'playing'; show(null); hud.show(true);
-  input.reset();
+  input.reset(); state.action = state.xform = false;
   hud.toast(L.name, 'big', 2600);
+  if (!state.fireHint && window.matchMedia?.('(pointer: coarse)').matches) { state.fireHint = true; hud.toast('HOLD THE RIGHT SIDE TO FIRE', '', 3000); } // touch screens: there's no gun button
 }
 function setPaused(on) {
   if (on && state.mode === 'playing') { state.mode = 'paused'; input.reset(); $('pause-goal').textContent = state.w.obj.goal; show('pause'); sfx.setRotor(0); }
@@ -157,7 +162,7 @@ function showResult() {
 }
 
 // ---------------------------------------------------------------- audio
-let resupplyT = 0, beepT = 0;
+let resupplyT = 0, beepT = 0, stepsSeen = 0, stompsSeen = 0;
 function audio(events, w, dt) {
   const p = playerPos(w);
   const near = (e, r = 90) => Math.hypot(e.x - p.x, e.z - p.z) < r;
@@ -181,10 +186,15 @@ function audio(events, w, dt) {
       case 'exit': case 'enter': sfx.play('exit'); break;
       case 'charge': sfx.play('beam'); break;
       case 'warn': sfx.play('warn'); break;
+      case 'xform': sfx.play('xform'); break;
+      case 'xformDone': sfx.play(ev.to === 'spider' ? 'stomp' : 'tick'); break;
       case 'resupply': if (resupplyT <= 0) { sfx.play('tick'); resupplyT = 0.3; } break;
     }
   }
   resupplyT -= dt;
+  // footfalls: the spider's legs and the WIDOW walkers (counted by the renderer as feet plant)
+  if (view.steps !== stepsSeen) { stepsSeen = view.steps; sfx.play('step'); }
+  if (view.stomps !== stompsSeen) { stompsSeen = view.stomps; sfx.play('stomp'); }
   // the SAM lock tone: beeps closer together as the lock closes
   let k = -1;
   for (const e of w.ents) if (e.type === 'sam' && e.alive && e.lockT > 0) k = Math.max(k, 1 - e.lockT / (e.lockMax || 1.6));
@@ -192,7 +202,7 @@ function audio(events, w, dt) {
   // the rotor bed
   const P = w.P, playing = state.mode === 'playing';
   if (!playing) sfx.setRotor(0);
-  else if (P.mode === 'fly') { const sp = Math.hypot(P.vx, P.vz); sfx.setRotor(P.craft === 'alien' ? 0.7 : 1, P.craft === 'alien' ? 34 : 14 + sp * 0.12, P.craft === 'alien' ? 1100 : 360 + sp * 8); }
+  else if (P.mode === 'fly') { const sp = Math.hypot(P.vx, P.vz), air = 1 - P.legK; sfx.setRotor((P.craft === 'alien' ? 0.7 : 1) * (0.2 + 0.8 * air), P.craft === 'alien' ? 34 : 6 + (8 + sp * 0.12) * air, P.craft === 'alien' ? 1100 : 220 + (140 + sp * 8) * air); } // on legs: the engines idle
   else sfx.setRotor(P.mode === 'foot' ? 0.25 : 0, 9, 260);
 }
 

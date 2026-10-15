@@ -15,6 +15,8 @@ export const THEMES = {
     water: 0x2a4a7a, waterOp: 0.8, deep: 0x1a2a50, shallow: 0x4a7a8a, sand: 0xcfae80, grass: 0xa89a6a, grass2: 0x8e8458, rock: 0x8a5a48, paved: 0x8a827a, lake: 0xc8b8a0, dirt: 0xb08a62 },
   night: { sky: 0x101830, fog: 0x18223e, fogNear: 140, fogFar: 380, sun: 0xb0c4ff, sunI: 1.5, sunDir: [-0.4, 0.8, 0.45], hemiSky: 0x8090c0, hemiGround: 0x3a3a48, hemiI: 1.15, night: true,
     water: 0x1a2a4a, waterOp: 0.85, deep: 0x0a1428, shallow: 0x2a3a5a, sand: 0xa89884, grass: 0x8a8670, grass2: 0x7a7660, rock: 0x6a5a54, paved: 0x5a5a62, lake: 0xc0bab0, dirt: 0x8a7a68 },
+  snow: { sky: 0xa8b6c4, fog: 0xb4c0cc, fogNear: 100, fogFar: 320, sun: 0xe4ecfa, sunI: 1.45, sunDir: [-0.35, 0.75, 0.5], hemiSky: 0xdfe8f4, hemiGround: 0x7a8494, hemiI: 1.3, snow: true, dust: 0xe8eef4,
+    water: 0x2a4a60, waterOp: 0.85, deep: 0x16303e, shallow: 0x5a8090, sand: 0xaab2bc, grass: 0xc6d0dc, grass2: 0xb4c0ce, rock: 0x5e626c, paved: 0x62666e, lake: 0x8eb0c8, dirt: 0x7e7a74 },
   vegas: { sky: 0x1c1038, fog: 0x34204c, fogNear: 150, fogFar: 380, sun: 0xc8b8ff, sunI: 1.4, sunDir: [0.35, 0.8, -0.4], hemiSky: 0xa080c8, hemiGround: 0x3a2a40, hemiI: 1.2, night: true,
     water: 0x1a2a4a, waterOp: 0.85, deep: 0x0a1428, shallow: 0x2a3a5a, sand: 0xb09a7a, grass: 0x8a8a6a, grass2: 0x7a7a5c, rock: 0x7a5a50, paved: 0x4a4a54, lake: 0x9a948c, dirt: 0x907a60 },
 };

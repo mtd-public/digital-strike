@@ -47,8 +47,8 @@ export function buildDecor(w) {
   const free = (x, z) => !busy.some(([bx, bz, r]) => Math.hypot(bx - x, bz - z) < r);
 
   // ---- grass tufts, in clumps
-  const nT = Math.round(({ tropic: 2600, pine: 2600, desert: 900, vegas: 700 }[pal] ?? 1500) * (LITE ? 0.4 : 1));
-  const dry = pal === 'desert' || pal === 'vegas';
+  const nT = Math.round(({ tropic: 2600, pine: 2600, desert: 900, vegas: 700, snow: 500 }[pal] ?? 1500) * (LITE ? 0.4 : 1));
+  const dry = pal === 'desert' || pal === 'vegas' || pal === 'snow'; // (snow: dead grass poking through)
   const tufts = new THREE.InstancedMesh(tuftGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), nT);
   tufts.receiveShadow = true; tufts.frustumCulled = false;
   const base = new THREE.Color(dry ? TH.dirt : TH.grass), alt = new THREE.Color(dry ? TH.sand : TH.grass2);
@@ -87,7 +87,7 @@ export function buildDecor(w) {
   group.add(tufts);
 
   // ---- boulders: on slopes, the beach, and scattered over the desert
-  const nR = { tropic: 160, pine: 260, desert: 280, vegas: 120 }[pal] ?? 160;
+  const nR = { tropic: 160, pine: 260, desert: 280, vegas: 120, snow: 220 }[pal] ?? 160;
   const rocks = new THREE.InstancedMesh(rockGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }), nR);
   rocks.castShadow = true; rocks.receiveShadow = true; rocks.frustumCulled = false;
   const rc = new THREE.Color(TH.rock), rc2 = new THREE.Color(TH.sand);

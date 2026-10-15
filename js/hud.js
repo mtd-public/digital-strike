@@ -1,14 +1,15 @@
 // The HUD: DOM pills and bars (mstr-gme-dsgn-tmpt docs/05: health readable at a glance with a critical
 // pulse, toasts for moments, floating numbers at the spot, a nav compass measured on screen, the primary
 // verb on the biggest button) plus an overlay canvas for the radar, the stick, the lock-on target's bar
-// and floating text.
+// and floating text. The chain gun is the right side of the screen, so its ammo is a readout, not a button;
+// WALK / FLY folds the rotor into spider mode and back.
 import { CRAFT, FOOT } from './sim/craft.js';
 import { TUNING as T } from './tuning.js';
 import { objectiveTarget, lzPos, playerPos } from './sim/world.js';
 
 const $ = (id) => document.getElementById(id);
 const NAMES = { soldier: 'SOLDIER', rpg: 'RPG TEAM', alien: 'ALIEN TROOPER', heavy: 'ALIEN HEAVY', tank: 'TANK', hovertank: 'HOVER TANK', tech: 'TECHNICAL', civ: 'CIVILIAN',
-  boat: 'GUNBOAT', drone: 'DRONE', saucer: 'SAUCER', gunship: 'GUNSHIP', agunship: 'ALIEN GUNSHIP', jet: 'RAIDER JET', mothership: 'MOTHERSHIP', navmine: 'NAVAL MINE',
+  boat: 'GUNBOAT', drone: 'DRONE', crawler: 'CRAWLER BOMB', walker: 'WIDOW WALKER', saucer: 'SAUCER', gunship: 'GUNSHIP', agunship: 'ALIEN GUNSHIP', jet: 'RAIDER JET', mothership: 'MOTHERSHIP', navmine: 'NAVAL MINE',
   radar: 'RADAR', barracks: 'BARRACKS', depot: 'FUEL DEPOT', flak: 'FLAK GUN', sam: 'SAM SITE', battery: 'SHORE BATTERY', boomtower: 'BOOM TOWER', generator: 'SHIELD GENERATOR', datacenter: 'DATA CENTER' };
 
 export class Hud {
@@ -16,8 +17,8 @@ export class Hud {
     this.el = { hud: $('hud'), armor: $('armor-bar'), armorG: $('armor-gauge'), fuel: $('fuel-bar'), fuelG: $('fuel-gauge'), lives: $('lives'), score: $('score'),
       objText: $('obj-text'), objGoal: $('obj-goal'), objBar: $('obj-bar'), objBarFill: $('obj-bar-fill'), objBarLabel: $('obj-bar-label'),
       nav: $('nav'), navArrow: $('nav-arrow'), navLabel: $('nav-label'), navDist: $('nav-dist'), warn: $('warn'), toasts: $('toasts'), vignette: $('vignette'),
-      action: $('btn-action'), ammo: { gun: $('ammo-gun'), msl: $('ammo-msl'), mine: $('ammo-mine') }, wname: { gun: $('name-gun'), msl: $('name-msl'), mine: $('name-mine') },
-      btn: { gun: $('btn-gun'), msl: $('btn-msl'), mine: $('btn-mine') }, craftName: $('craft-name') };
+      action: $('btn-action'), xform: $('btn-xform'), ammo: { gun: $('ammo-gun'), msl: $('ammo-msl'), mine: $('ammo-mine') }, wname: { gun: $('name-gun'), msl: $('name-msl'), mine: $('name-mine') },
+      btn: { gun: $('gun-read'), msl: $('btn-msl'), mine: $('btn-mine') }, craftName: $('craft-name') };
     this.overlay = $('overlay'); this.ctx = this.overlay.getContext('2d');
     this.radar = $('radar'); this.rctx = this.radar.getContext('2d');
     this.floaters = []; this.hurt = 0; this.lastScore = -1; this.warnText = '';
@@ -62,7 +63,8 @@ export class Hud {
     const lives = Math.max(0, P.lives);
     if (E.lives.dataset.n !== String(lives)) { E.lives.dataset.n = lives; E.lives.textContent = '▲'.repeat(lives); }
     if (w.score !== this.lastScore) { this.lastScore = w.score; E.score.textContent = w.score.toLocaleString(); }
-    E.craftName.textContent = foot ? FOOT.name : C.name;
+    const cname = foot ? FOOT.name : P.form === 'spider' ? C.spiderName : C.name;
+    if (E.craftName.textContent !== cname) E.craftName.textContent = cname;
     // objective
     const o = w.obj;
     E.objText.textContent = o.text; E.objGoal.textContent = o.goal;
@@ -87,6 +89,16 @@ export class Hud {
       const nm = foot ? (slot === 'gun' ? FOOT.gun.name : '') : W[slot].name;
       if (E.wname[slot].textContent !== nm) E.wname[slot].textContent = nm;
       E.btn[slot].classList.toggle('empty', !foot && (P.ammo[slot] ?? 0) < 1 || (foot && slot !== 'gun'));
+    }
+    E.btn.gun.classList.toggle('firing', !!input.gun);
+    // WALK / FLY: dimmed where it can't (no footing, or the blizzard has the rotor iced); pulses when it's the job
+    const inCraft = P.mode === 'fly';
+    E.xform.classList.toggle('hidden', !inCraft);
+    if (inCraft) {
+      const lbl = P.xform ? '· · ·' : P.form === 'spider' ? 'FLY' : 'WALK';
+      if (E.xform.textContent !== lbl) E.xform.textContent = lbl;
+      E.xform.classList.toggle('off', !P.xform && !P.canXform);
+      E.xform.classList.toggle('go', !P.xform && P.canXform && w.obj.stage === 'deploy' && P.form === 'heli');
     }
     // the contextual action button
     const act = P.mode === 'fly' && P.canExit && (w.level.objective.kind === 'heist' || w.opts.exitAnywhere) ? 'EXIT' : foot && P.canEnter ? 'ENTER' : null;
@@ -132,6 +144,13 @@ export class Hud {
       c.fillStyle = f.bad ? '#ff6a6a' : '#ffe27a'; c.fillText(f.text, s.x, s.y);
     }
     c.globalAlpha = 1;
+    // the fire zone: a ring under the right thumb while it holds the trigger
+    if (input.firing) {
+      const r = 26 + Math.sin(t * 30) * 3;
+      c.lineWidth = 3; c.strokeStyle = 'rgba(255,214,90,.7)';
+      c.beginPath(); c.arc(input.fireX, input.fireY, r, 0, Math.PI * 2); c.stroke();
+      c.fillStyle = 'rgba(255,226,122,.18)'; c.beginPath(); c.arc(input.fireX, input.fireY, r - 4, 0, Math.PI * 2); c.fill();
+    }
     // the floating stick
     if (input.stickActive) {
       c.lineWidth = 3; c.strokeStyle = 'rgba(255,240,200,.55)'; c.fillStyle = 'rgba(20,24,14,.25)';

@@ -17,6 +17,22 @@ export const TUNING = {
   INVULN_T: 3, // s of blink after a respawn
   LOW_FUEL: 25, LOW_ARMOR: 30, // warning thresholds (pulse + beep)
 
+  // ---------------------------------------------------------------- spider mode: the craft folds its rotor and walks
+  SPIDER: {
+    speed: 10, // m/s: twice a tank, well under half the chopper; you choose it for staying power, not to travel
+    accel: 32, // m/s²: six legs grip, so it starts and stops sharper than the chopper drifts
+    turret: 5, // rad/s the fuselage swings on its leg ring (a turret now: it can face anything while walking)
+    H: 3.5, // m: belly over the ground on its legs
+    r: 2.2, // m: footprint against walls and buildings
+    wade: -1.2, // m: walks out into the shallows, never the sea
+    armorMul: 0.7, // damage taken: the leg ring and belly plate soak 30 %
+    spreadMul: 0.55, // a planted chain gun is steadier than a hovering one
+    fuelMul: 0.3, // walking sips fuel
+    slopeSlow: 0.6, // steep ground slows it (up to half speed)
+    pickR: 3.2, // m: crates are scooped up underfoot (no winch on legs)
+  },
+  XFORM_T: 1.3, // s to fold the rotor and unfold the legs, or back: long enough to read and to be a risk, short enough to use in a fight
+
   // ---------------------------------------------------------------- targeting (Strike-style auto-aim)
   LOCK_RANGE: 66, // m: a bit past the longest enemy gun (SAM 70 m excepted, so a SAM can shoot first: telegraphed)
   LOCK_CONE: 1.05, // rad either side of the nose a new target can be picked in
@@ -71,6 +87,8 @@ export const TUNING = {
   AGUNSHIP: { hp: 210, speed: 18, orbit: 28, see: 90, salvo: 3, gap: 0.14, rate: 3.8, dmg: 6.5, shot: 44 },
   JET: { hp: 40, speed: 40, alt: 24, range: 46, dmg: 1.6, shot: 80, bomb: 16, bombs: 2, away: 5, turn: 1.0 },
   MOTHERSHIP: { hp: 2400, speed: 3.5, alt: 34, charge: 3, beam: 2.4, beamDps: 60, cycle: 11, spawn: 22 },
+  CRAWLER: { hp: 24, speed: 8, see: 22, dmg: 75, blast: 5.5 }, // six-legged bomb bots (mission 6): fast, fragile, they blow up on whatever they reach
+  WALKER: { hp: 900, speed: 3.4, turret: 1.3, range: 58, rate: 3, aim: 0.8, dmg: 14, shot: 52, see: 72, salvo: 4, gap: 0.2, salvoRate: 7.5, rdmg: 5 }, // WIDOW: the enemy's own spider tank, cannon + rocket pods
   NAVMINE: { hp: 6, dmg: 130, blast: 9 }, // floating in the strait: shoot them before the tanker reaches them
   BATTERY: { range: 150, rate: 6, aim: 1.2, dmg: 30, shot: 48, blast: 5 }, // shore guns: they shell the tanker
   BARRACKS_SPAWN: 16, BARRACKS_CAP: 5, // s between reinforcements while you're near; soldiers alive per barracks
@@ -80,6 +98,6 @@ export const TUNING = {
   SCORE: { soldier: 50, rpg: 75, tank: 400, tech: 250, flak: 300, sam: 500, gunship: 800, boat: 600, drone: 150,
     radar: 1000, barracks: 600, depot: 400, datacenter: 5000, civ: -250,
     alien: 60, heavy: 120, hovertank: 450, saucer: 200, agunship: 900, jet: 400, mothership: 5000,
-    navmine: 100, battery: 600, boomtower: 800, generator: 1500 },
+    navmine: 100, battery: 600, boomtower: 800, generator: 1500, crawler: 150, walker: 3000 },
   RANKS: [[30000, 'S'], [24000, 'A'], [18000, 'B'], [12000, 'C'], [0, 'D']],
 };

@@ -5,6 +5,7 @@
 //                  soft sprites, a single draw call each (night missions light up, day ones keep the beacons)
 //   gulls          a handful of birds wheeling over the coast (one InstancedMesh, wings flapping)
 //   dust           wind-blown dust in the desert missions
+//   snow           a blizzard (mission 6): flakes in a box that follows the camera focus, one THREE.Points
 import * as THREE from 'three';
 import { THEMES } from './terrain-view.js';
 import { cityX, cityZ } from '../sim/levels/common.js';
@@ -48,8 +49,8 @@ export function buildAtmos(w, glowTex, townLamps = []) {
   const L = w.level, TH = THEMES[L.theme], T = w.terrain, group = new THREE.Group(), rng = mulberry32(31), dark = !!TH.night;
   const st = { group, clouds: [], gulls: null, dust: L.theme === 'dusk' || L.theme === 'night' || L.theme === 'vegas', wind: [3.2, 1.4] };
 
-  // ---- cloud shadows (day and dusk, and only where there are shadows at all)
-  if (!dark && !LITE) {
+  // ---- cloud shadows (day and dusk, and only where there are shadows at all; the blizzard is overcast)
+  if (!dark && !LITE && !TH.snow) {
     const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, alphaMap: checker(), alphaTest: 0.5 });
     const hide = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
     for (let i = 0; i < 7; i++) {
@@ -100,6 +101,27 @@ export function buildAtmos(w, glowTex, townLamps = []) {
   pts(small, dark ? 2.6 : 1.8, dark ? 1 : 0.8);
   pts(big, dark ? 9 : 6, dark ? 0.9 : 0.55);
 
+  // ---- the blizzard: flakes falling and blowing through a box round the focus (positions wrap in the shader)
+  if (TH.snow) {
+    const n = LITE ? 1400 : 3200, p = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) p.set([(rng() - 0.5) * 120, rng() * 40, (rng() - 0.5) * 120], i * 3);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+    const m = new THREE.PointsMaterial({ color: 0xffffff, size: 0.85, map: glowTex, transparent: true, depthWrite: false, opacity: 0.95, sizeAttenuation: true, fog: false });
+    const u = { uOff: { value: new THREE.Vector3() } };
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uOff = u.uOff;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec3 uOff;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+          vec3 q = position + uOff;
+          transformed = vec3(mod(q.x + 60.0, 120.0) - 60.0, mod(q.y, 40.0), mod(q.z + 60.0, 120.0) - 60.0);
+          transformed.x += sin(position.y * 0.7 + uOff.y * 0.3) * 0.6;`);
+    };
+    const flakes = new THREE.Points(g, m); flakes.frustumCulled = false; flakes.renderOrder = 7;
+    group.add(flakes);
+    st.snow = { flakes, u, off: new THREE.Vector3() };
+    st.wind = [6, 2.5];
+  }
+
   // ---- gulls over the coast
   if (L.theme === 'tropic' || L.theme === 'strait') {
     const n = 12, gm = new THREE.InstancedMesh(gullGeometry(), new THREE.MeshLambertMaterial({ color: 0xf4f4f0, side: THREE.DoubleSide }), n);
@@ -130,6 +152,12 @@ export function updateAtmos(st, w, fx, focus, dt, t) {
       mesh.setMatrixAt(i, _m.compose(_p, _q, _s));
     });
     mesh.instanceMatrix.needsUpdate = true;
+  }
+  if (st.snow) { // flakes drift down and downwind; the box follows the focus, so the snow never runs out
+    const S = st.snow;
+    S.off.x += st.wind[0] * dt; S.off.y -= 3.2 * dt; S.off.z += st.wind[1] * dt;
+    S.flakes.position.set(focus.x, focus.y - 6, focus.z);
+    S.u.uOff.value.set(S.off.x - focus.x, S.off.y - focus.y, S.off.z - focus.z);
   }
   if (st.dust && Math.random() < dt * 2.5) {
     const x = focus.x + (Math.random() - 0.5) * 70, z = focus.z + (Math.random() - 0.5) * 70, y = w.terrain.surface(x, z);

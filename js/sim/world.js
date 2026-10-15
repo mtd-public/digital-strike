@@ -9,6 +9,7 @@
 //        aim                                   a yaw the nose should hold (right stick), or null
 //        gun, msl, mine                        held fire buttons
 //        action                                true on the step EXIT / ENTER was pressed
+//        xform                                 true on the step WALK / FLY was pressed (spider mode ⇄ rotor)
 import { TUNING as T } from '../tuning.js';
 import { Terrain } from './terrain.js';
 import { CRAFT, FOOT } from './craft.js';
@@ -16,6 +17,8 @@ import { FOOTPRINTS, STRUCT_TYPES, DC_PARTS, yawFor, cityX, cityZ } from './leve
 import { spawnLevelUnits, updateEnt, KIND } from './ai.js';
 import { setupObjective, updateObjective, objectiveTarget } from './objectives.js';
 import { mulberry32, clamp, wrapAngle } from '../utils.js';
+
+const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
 
 export const emit = (w, type, data = {}) => { w.events.push({ type, ...data }); };
 
@@ -63,11 +66,11 @@ export function createWorld(level, opts = {}) {
     w.solids.push(makeBox(x, z, 0, hw, hd, gy + (bottom || 0), gy + h, { kind, on: true }));
   }
 
-  // enemy (and friendly) structures, data centers first
+  // enemy (and friendly) structures, data centers first (mission 6's are ours: team 'friend')
   for (const d of level.datacenters || []) {
-    const P = DC_PARTS[d.style], gy = G(d.x, d.z);
+    const P = DC_PARTS[d.style], gy = G(d.x, d.z), team = d.team || 'enemy';
     const boxes = [...P.boxes.map((b) => placeBox(d.x, d.z, d.yaw, gy, b)), ...P.towers.map(([lx, lz, r, h]) => placeBox(d.x, d.z, d.yaw, gy, [lx, lz, r * 0.85, r * 0.85, h]))];
-    addEnt(w, { kind: 'struct', type: 'datacenter', team: 'enemy', name: d.name, tag: d.id, style: d.style, tint: d.tint, x: d.x, z: d.z, y: gy, yaw: d.yaw, hp: d.hp, boxes, armored: true, objective: true });
+    addEnt(w, { kind: 'struct', type: 'datacenter', team, name: d.name, tag: d.id, style: d.style, tint: d.tint, x: d.x, z: d.z, y: gy, yaw: d.yaw, hp: d.hp, boxes, armored: true, objective: team === 'enemy' });
   }
   for (const s of level.structures || []) {
     const ty = STRUCT_TYPES[s.kind], gy = G(s.x, s.z), yaw = s.yaw || 0;
@@ -81,9 +84,10 @@ export function createWorld(level, opts = {}) {
   spawnLevelUnits(w);
 
   // the player
-  const C = CRAFT[craft], S = level.start;
+  const C = CRAFT[craft], S = level.start, spider = S.form === 'spider';
   w.P = {
-    mode: 'fly', craft, x: S.x, z: S.z, y: G(S.x, S.z) + T.CRUISE, vx: 0, vz: 0, yaw: S.yaw,
+    mode: 'fly', craft, x: S.x, z: S.z, y: G(S.x, S.z) + (spider ? T.SPIDER.H : T.CRUISE), vx: 0, vz: 0, yaw: S.yaw,
+    form: spider ? 'spider' : 'heli', xform: null, legK: spider ? 1 : 0, canXform: false, // mode 'fly' = in the craft; form says rotor or legs
     armor: C.armor, fuel: T.FUEL, ammo: {}, cd: { gun: 0, msl: 0, mine: 0 }, pylon: 1,
     target: null, lockT: 0, lives: T.LIVES, invT: 2, downT: 0, hurtT: 0, foot: null, landT: 0, boardT: 0,
     canExit: false, canEnter: null, onLz: false, warnFuel: false, warnArmor: false,
@@ -141,8 +145,8 @@ export function touches(e, x, y, z, pr) {
 }
 export function playerPos(w) {
   const P = w.P;
-  if (P.mode === 'foot') return { x: P.foot.x, y: P.foot.y + 1, z: P.foot.z, vx: P.foot.vx, vz: P.foot.vz, r: FOOT.hitR, foot: true };
-  return { x: P.x, y: P.y, z: P.z, vx: P.vx, vz: P.vz, r: CRAFT[P.craft].hitR, foot: false };
+  if (P.mode === 'foot') return { x: P.foot.x, y: P.foot.y + 1, z: P.foot.z, vx: P.foot.vx, vz: P.foot.vz, r: FOOT.hitR, foot: true, ground: true };
+  return { x: P.x, y: P.y, z: P.z, vx: P.vx, vz: P.vz, r: CRAFT[P.craft].hitR, foot: false, ground: P.legK > 0.5 }; // ground: flak and SAMs can't take it
 }
 export const playerAlive = (w) => (w.P.mode === 'fly' || w.P.mode === 'foot') && w.phase === 'play';
 
@@ -204,6 +208,7 @@ export function explode(w, x, y, z, radius, dmg, team, src) {
 export function hurtPlayer(w, amount, x, z, src) {
   const P = w.P;
   if (!playerAlive(w) || P.invT > 0 || w.opts.god) return;
+  if (P.mode === 'fly' && P.legK > 0.5) amount *= T.SPIDER.armorMul;
   P.armor -= amount; P.hurtT = 0.25;
   emit(w, 'hurt', { amount, x, z, src, foot: P.mode === 'foot' });
   if (P.armor <= 0) playerDown(w, P.mode === 'foot' ? 'pilot' : 'armor');
@@ -234,14 +239,17 @@ function respawn(w) {
   else if (o.kind === 'heist' && P.foot && parked) { x = parked.x; z = parked.z; parked.alive = false; craft = parked.craft; }
   else if (L.lz.follow) { const t = w.ents.find((e) => e.kind === 'tanker'); if (t) { x = t.x; z = t.z; } }
   else { x = L.lz.x; z = L.lz.z; }
-  Object.assign(P, { mode: 'fly', craft, x, z, y: w.terrain.surface(x, z) + T.CRUISE, vx: 0, vz: 0, armor: CRAFT[craft].armor, fuel: T.FUEL, invT: T.INVULN_T, foot: null, target: null, lockT: 0, ammo: {} });
+  const spider = !!o.noFly; // grounded by the weather: you come back on legs
+  Object.assign(P, { mode: 'fly', craft, x, z, y: w.terrain.surface(x, z) + (spider ? T.SPIDER.H : T.CRUISE), vx: 0, vz: 0, armor: CRAFT[craft].armor, fuel: T.FUEL, invT: T.INVULN_T, foot: null, target: null, lockT: 0, ammo: {},
+    form: spider ? 'spider' : 'heli', xform: null, legK: spider ? 1 : 0 });
   fillAmmo(P, 1);
   emit(w, 'respawn', {});
 }
 
-function acquireTarget(w, inp, px, py, pz, yaw, foot) {
+function acquireTarget(w, inp, px, py, pz, yaw, foot, spider) {
   const firing = inp.gun || inp.msl; // holding fire with nothing ahead swings the search wide (generous auto-aim for thumbs)
-  const P = w.P, cone = foot ? Math.PI : inp.tank ? (firing ? 1.1 : 0.75) : firing ? T.LOCK_CONE_FIRING : T.LOCK_CONE, range = foot ? FOOT.gun.range + 6 : T.LOCK_RANGE;
+  const P = w.P, range = foot ? FOOT.gun.range + 6 : T.LOCK_RANGE;
+  const cone = foot || (spider && firing && !inp.tank) ? Math.PI : inp.tank ? (firing ? 1.1 : 0.75) : firing ? T.LOCK_CONE_FIRING : T.LOCK_CONE; // the spider's fuselage is a turret: it swings round to anything
   const fx = Math.sin(yaw), fz = Math.cos(yaw);
   const angTo = (e) => { const a = aimPoint(e), dx = a.x - px, dz = a.z - pz, d = Math.hypot(dx, dz) || 1; return { d: Math.hypot(dx, a.y - py, dz), ang: Math.acos(clamp((dx * fx + dz * fz) / d, -1, 1)) }; };
   const cur = P.target && w.ents.find((e) => e.id === P.target);
@@ -253,7 +261,7 @@ function acquireTarget(w, inp, px, py, pz, yaw, foot) {
     if (q.d > range || q.ang > cone) continue;
     let s = q.d * (1 + 1.4 * q.ang);
     if (e.objective) s *= 0.85;
-    if (e.kind === 'navmine') s *= 0.7;
+    if (e.kind === 'navmine' || e.kind === 'crawler') s *= 0.7; // the ones that blow up on what you guard
     if (s < bs) { bs = s; best = e; }
   }
   return best;
@@ -273,7 +281,7 @@ function fire(w, slot, px, py, pz, yaw, vx, vz, target, locked) {
     } else if (slot === 'pistol') { ax = m.x + Math.sin(yaw) * 20; ay = m.y; az = m.z + Math.cos(yaw) * 20; }
     else { ax = px + Math.sin(yaw) * T.GROUND_AIM; az = pz + Math.cos(yaw) * T.GROUND_AIM; ay = w.terrain.surface(ax, az) + 0.5; }
     let dx = ax - m.x, dy = ay - m.y, dz = az - m.z;
-    const d = Math.hypot(dx, dy, dz) || 1, sp = Wp.spread;
+    const d = Math.hypot(dx, dy, dz) || 1, sp = Wp.spread * (slot === 'gun' && P.form === 'spider' ? T.SPIDER.spreadMul : 1);
     dx = dx / d + (w.rng() - 0.5) * sp * 2; dy = dy / d + (w.rng() - 0.5) * sp * 2; dz = dz / d + (w.rng() - 0.5) * sp * 2;
     const n = Math.hypot(dx, dy, dz);
     w.shots.push({ team: 'player', kind: Wp.kind, x: m.x, y: m.y, z: m.z, vx: (dx / n) * Wp.speed, vy: (dy / n) * Wp.speed, vz: (dz / n) * Wp.speed, life: Wp.range / Wp.speed, dmg: Wp.dmg, r: 0.4 }); // (no inherited velocity: the auto-aim already leads)
@@ -339,47 +347,87 @@ function updatePlayer(w, inp, dt) {
   }
   if (P.boardT > 0) P.boardT -= dt;
 
-  // ---------------------------------------------------------------- flying
-  let vdx, vdz;
-  if (inp.tank) {
-    P.yaw += clamp(inp.turn || 0, -1, 1) * C.turn * dt;
-    const f = clamp(inp.fwd || 0, -1, 1), s = clamp(inp.strafe || 0, -1, 1);
-    const fs = f >= 0 ? f * C.speed : f * C.strafe;
-    vdx = Math.sin(P.yaw) * fs - Math.cos(P.yaw) * s * C.strafe;
-    vdz = Math.cos(P.yaw) * fs + Math.sin(P.yaw) * s * C.strafe;
-  } else {
-    const m = Math.hypot(inp.mx || 0, inp.mz || 0), k = m > 1 ? 1 / m : 1;
-    vdx = (inp.mx || 0) * k * C.speed; vdz = (inp.mz || 0) * k * C.speed;
+  // ---------------------------------------------------------------- spider mode ⇄ rotor
+  P.canXform = P.form === 'spider' ? !o.noFly : footing(w, P.x, P.z);
+  if (inp.xform && !P.xform) startTransform(w);
+  if (P.xform) {
+    const X = P.xform, gy = w.terrain.surface(P.x, P.z);
+    X.t += dt;
+    const k = Math.min(1, X.t / T.XFORM_T);
+    if (X.to === 'spider') { P.legK = smooth(0.25, 1, k); P.y = X.y0 + (gy + T.SPIDER.H - X.y0) * smooth(0, 0.65, k); } // settle, then stand up on the legs
+    else { P.legK = 1 - smooth(0, 0.55, k); P.y = gy + T.SPIDER.H + (T.CRUISE - T.SPIDER.H) * smooth(0.4, 1, k); } // fold the legs, spin up, lift
+    if (k >= 1) { P.form = X.to; P.xform = null; P.legK = P.form === 'spider' ? 1 : 0; emit(w, 'xformDone', { to: P.form }); }
+    return;
   }
-  const dvx = vdx - P.vx, dvz = vdz - P.vz, dv = Math.hypot(dvx, dvz), maxDv = C.accel * dt;
-  if (dv > maxDv) { P.vx += (dvx / dv) * maxDv; P.vz += (dvz / dv) * maxDv; } else { P.vx = vdx; P.vz = vdz; }
-  P.x += P.vx * dt; P.z += P.vz * dt;
-  const lim = L.island.half - 24;
-  if (Math.abs(P.x) > lim) { P.x = Math.sign(P.x) * lim; P.vx = 0; }
-  if (Math.abs(P.z) > lim) { P.z = Math.sign(P.z) * lim; P.vz = 0; }
-  if (w.shield) { // the energy dome over the alien hangar pushes you back out
-    const S = L.heist.shield, dx = P.x - S.x, dz = P.z - S.z, d = Math.hypot(dx, dz);
-    if (d < S.r + 2) { P.x = S.x + (dx / (d || 1)) * (S.r + 2); P.z = S.z + (dz / (d || 1)) * (S.r + 2); P.vx *= -0.3; P.vz *= -0.3; if (!P.shieldBump) emit(w, 'shieldHit', { x: P.x, y: P.y, z: P.z }); P.shieldBump = 0.5; }
-  }
-  P.shieldBump = Math.max(0, (P.shieldBump || 0) - dt);
-  // altitude: cruise over the ground, climb over roofs (look a little ahead)
-  const gy = w.terrain.surface(P.x, P.z);
-  const roof = Math.max(roofAt(w, P.x, P.z, 6), roofAt(w, P.x + P.vx * 0.6, P.z + P.vz * 0.6, 6));
-  const want = Math.max(gy + T.CRUISE, roof + T.ROOF_CLEAR, P.boardT > 0 ? gy + 1 : -Infinity);
-  P.y += (want - P.y) * (1 - Math.exp(-T.CLIMB_RATE * dt));
-  if (P.y < roof + 1.5) P.y = roof + 1.5;
-  if (P.y < gy + 2.5 && P.boardT <= 0) P.y = gy + 2.5;
+  const spider = P.form === 'spider';
 
-  // targeting and the nose
-  const tgt = acquireTarget(w, inp, P.x, P.y, P.z, P.yaw, false);
+  // ---------------------------------------------------------------- moving: flying, or walking on six legs
+  const lim = L.island.half - 24;
+  let gy;
+  if (spider) {
+    const S = T.SPIDER;
+    let vdx, vdz;
+    if (inp.tank) {
+      P.yaw += clamp(inp.turn || 0, -1, 1) * S.turret * 0.6 * dt;
+      const f = clamp(inp.fwd || 0, -1, 1), sd = clamp(inp.strafe || 0, -1, 1);
+      vdx = (Math.sin(P.yaw) * f - Math.cos(P.yaw) * sd) * S.speed; vdz = (Math.cos(P.yaw) * f + Math.sin(P.yaw) * sd) * S.speed;
+    } else {
+      const m = Math.hypot(inp.mx || 0, inp.mz || 0), k = m > 1 ? 1 / m : 1;
+      vdx = (inp.mx || 0) * k * S.speed; vdz = (inp.mz || 0) * k * S.speed;
+    }
+    const slow = 1 - Math.min(0.5, w.terrain.slope(P.x, P.z) * S.slopeSlow);
+    vdx *= slow; vdz *= slow;
+    const dvx = vdx - P.vx, dvz = vdz - P.vz, dv = Math.hypot(dvx, dvz), maxDv = S.accel * dt;
+    if (dv > maxDv) { P.vx += (dvx / dv) * maxDv; P.vz += (dvz / dv) * maxDv; } else { P.vx = vdx; P.vz = vdz; }
+    const can = (x, z) => Math.abs(x) < lim && Math.abs(z) < lim && w.terrain.height(x, z) > S.wade && !blocked(w, x, z, S.r, w.terrain.surface(x, z)) && !(w.shield && insideShield(w, x, z, S.r));
+    const nx = P.x + P.vx * dt, nz = P.z + P.vz * dt;
+    if (can(nx, nz)) { P.x = nx; P.z = nz; }
+    else if (can(nx, P.z)) { P.x = nx; P.vz = 0; }
+    else if (can(P.x, nz)) { P.z = nz; P.vx = 0; }
+    else { P.vx = P.vz = 0; }
+    gy = w.terrain.surface(P.x, P.z);
+    P.y += (gy + S.H - P.y) * (1 - Math.exp(-10 * dt));
+  } else {
+    let vdx, vdz;
+    if (inp.tank) {
+      P.yaw += clamp(inp.turn || 0, -1, 1) * C.turn * dt;
+      const f = clamp(inp.fwd || 0, -1, 1), sd = clamp(inp.strafe || 0, -1, 1);
+      const fs = f >= 0 ? f * C.speed : f * C.strafe;
+      vdx = Math.sin(P.yaw) * fs - Math.cos(P.yaw) * sd * C.strafe;
+      vdz = Math.cos(P.yaw) * fs + Math.sin(P.yaw) * sd * C.strafe;
+    } else {
+      const m = Math.hypot(inp.mx || 0, inp.mz || 0), k = m > 1 ? 1 / m : 1;
+      vdx = (inp.mx || 0) * k * C.speed; vdz = (inp.mz || 0) * k * C.speed;
+    }
+    const dvx = vdx - P.vx, dvz = vdz - P.vz, dv = Math.hypot(dvx, dvz), maxDv = C.accel * dt;
+    if (dv > maxDv) { P.vx += (dvx / dv) * maxDv; P.vz += (dvz / dv) * maxDv; } else { P.vx = vdx; P.vz = vdz; }
+    P.x += P.vx * dt; P.z += P.vz * dt;
+    if (Math.abs(P.x) > lim) { P.x = Math.sign(P.x) * lim; P.vx = 0; }
+    if (Math.abs(P.z) > lim) { P.z = Math.sign(P.z) * lim; P.vz = 0; }
+    if (w.shield) { // the energy dome over the alien hangar pushes you back out
+      const S = L.heist.shield, dx = P.x - S.x, dz = P.z - S.z, d = Math.hypot(dx, dz);
+      if (d < S.r + 2) { P.x = S.x + (dx / (d || 1)) * (S.r + 2); P.z = S.z + (dz / (d || 1)) * (S.r + 2); P.vx *= -0.3; P.vz *= -0.3; if (!P.shieldBump) emit(w, 'shieldHit', { x: P.x, y: P.y, z: P.z }); P.shieldBump = 0.5; }
+    }
+    P.shieldBump = Math.max(0, (P.shieldBump || 0) - dt);
+    // altitude: cruise over the ground, climb over roofs (look a little ahead)
+    gy = w.terrain.surface(P.x, P.z);
+    const roof = Math.max(roofAt(w, P.x, P.z, 6), roofAt(w, P.x + P.vx * 0.6, P.z + P.vz * 0.6, 6));
+    const want = Math.max(gy + T.CRUISE, roof + T.ROOF_CLEAR, P.boardT > 0 ? gy + 1 : -Infinity);
+    P.y += (want - P.y) * (1 - Math.exp(-T.CLIMB_RATE * dt));
+    if (P.y < roof + 1.5) P.y = roof + 1.5;
+    if (P.y < gy + 2.5 && P.boardT <= 0) P.y = gy + 2.5;
+  }
+
+  // targeting and the nose (on legs, the whole fuselage is the turret and turns faster)
+  const tgt = acquireTarget(w, inp, P.x, P.y, P.z, P.yaw, false, spider);
   if ((tgt ? tgt.id : null) !== P.target) { P.target = tgt ? tgt.id : null; P.lockT = 0; } else if (tgt) P.lockT += dt;
   if (!inp.tank) {
     let face = null;
-    const firing = inp.gun || inp.msl;
+    const firing = inp.gun || inp.msl, turn = spider ? T.SPIDER.turret : C.turn;
     if (inp.aim != null) face = inp.aim;
     else if (firing && tgt) { const a = aimPoint(tgt); face = Math.atan2(a.x - P.x, a.z - P.z); }
-    else if (Math.hypot(P.vx, P.vz) > 2.5) face = Math.atan2(P.vx, P.vz);
-    if (face != null) P.yaw += clamp(wrapAngle(face - P.yaw), -C.turn * dt, C.turn * dt);
+    else if (Math.hypot(P.vx, P.vz) > (spider ? 1.5 : 2.5)) face = Math.atan2(P.vx, P.vz);
+    if (face != null) P.yaw += clamp(wrapAngle(face - P.yaw), -turn * dt, turn * dt);
   }
   P.yaw = wrapAngle(P.yaw);
 
@@ -392,14 +440,14 @@ function updatePlayer(w, inp, dt) {
   if (C.armorRegen && P.hurtT <= 0) P.armor = Math.min(C.armor, P.armor + C.armorRegen * dt);
 
   // fuel
-  P.fuel -= C.fuelBurn * dt;
+  P.fuel -= C.fuelBurn * (spider ? T.SPIDER.fuelMul : 1) * dt;
   if (P.fuel <= 0) { P.fuel = 0; playerDown(w, 'fuel'); emit(w, 'toast', { text: 'OUT OF FUEL', cls: 'bad' }); return; }
   const lowF = C.fuelBurn > 0 && P.fuel < T.LOW_FUEL, lowA = P.armor < T.LOW_ARMOR;
   if (lowF && !P.warnFuel) emit(w, 'warn', { what: 'fuel' });
   if (lowA && !P.warnArmor) emit(w, 'warn', { what: 'armor' });
   P.warnFuel = lowF; P.warnArmor = lowA;
 
-  // the LZ: rearm, refuel, repair
+  // the LZ: rearm, refuel, repair (hover on it, or stand on it)
   const lz = lzPos(w);
   P.onLz = !!lz && Math.hypot(P.x - lz.x, P.z - lz.z) < lz.r;
   if (P.onLz) {
@@ -411,8 +459,9 @@ function updatePlayer(w, inp, dt) {
     if (any) emit(w, 'resupply', {});
   }
 
-  // the winch: crates within reach float up to you
+  // crates: the winch reels them up to the chopper; the spider scoops them up underfoot
   for (const k of w.pickups) {
+    if (spider) { if (k.state === 'idle' && Math.hypot(k.x - P.x, k.z - P.z) < T.SPIDER.pickR) { k.state = 'gone'; applyPickup(w, k); } continue; }
     if (k.state === 'idle' && Math.hypot(k.x - P.x, k.z - P.z) < T.WINCH_R) { k.state = 'winch'; k.t = 0; k.y0 = k.y; emit(w, 'winch', { id: k.id }); }
     if (k.state === 'winch') {
       k.t += dt; k.x += (P.x - k.x) * Math.min(1, dt * 6); k.z += (P.z - k.z) * Math.min(1, dt * 6);
@@ -423,8 +472,22 @@ function updatePlayer(w, inp, dt) {
 
   // getting out: hover slowly over dry, flat ground
   const slow = Math.hypot(P.vx, P.vz) < 5;
-  P.canExit = slow && w.terrain.height(P.x, P.z) > 0.4 && w.terrain.slope(P.x, P.z) < 0.3 && roofAt(w, P.x, P.z, 3.5) < gy + 1 && o.allowExit && o.stage === 'land';
+  P.canExit = !spider && slow && w.terrain.height(P.x, P.z) > 0.4 && w.terrain.slope(P.x, P.z) < 0.3 && roofAt(w, P.x, P.z, 3.5) < gy + 1 && o.allowExit && o.stage === 'land';
   if (inp.action && P.canExit) { P.landT = 1.1; emit(w, 'landing', {}); }
+}
+
+// Can the craft stand up on its legs here? Dry (or shallow) ground, not too steep, clear of walls and roofs.
+export function footing(w, x, z) {
+  const S = T.SPIDER, gy = w.terrain.surface(x, z);
+  return w.terrain.height(x, z) > S.wade && w.terrain.slope(x, z) < 0.75 && roofAt(w, x, z, S.r) < gy + 0.5 && !blocked(w, x, z, S.r, gy) && !(w.shield && insideShield(w, x, z, S.r));
+}
+function startTransform(w) {
+  const P = w.P, o = w.obj;
+  if (P.form === 'heli' && !footing(w, P.x, P.z)) { if (w.t - (P.xformNag || -9) > 1.5) { P.xformNag = w.t; emit(w, 'toast', { text: 'NO FOOTING · find open ground', cls: 'bad' }); } return; }
+  if (P.form === 'spider' && o.noFly) { if (w.t - (P.xformNag || -9) > 1.5) { P.xformNag = w.t; emit(w, 'toast', { text: o.noFlyWhy || 'ROTOR GROUNDED', cls: 'bad' }); } return; }
+  P.xform = { to: P.form === 'heli' ? 'spider' : 'heli', t: 0, y0: P.y };
+  P.vx = P.vz = 0; P.landT = 0;
+  emit(w, 'xform', { to: P.xform.to, x: P.x, y: P.y, z: P.z });
 }
 
 export function lzPos(w) {
@@ -457,7 +520,7 @@ export function board(w, e) {
   const P = w.P;
   e.alive = false; e.gone = true;
   const stolen = e.craft === 'alien' && e.proto;
-  Object.assign(P, { mode: 'fly', craft: e.craft, x: e.x, z: e.z, y: e.y + 1, yaw: e.yaw, vx: 0, vz: 0, foot: null, target: null, boardT: 0.8, invT: 1.5 });
+  Object.assign(P, { mode: 'fly', craft: e.craft, x: e.x, z: e.z, y: e.y + 1, yaw: e.yaw, vx: 0, vz: 0, foot: null, target: null, boardT: 0.8, invT: 1.5, form: 'heli', xform: null, legK: 0 });
   if (e.keep && !stolen) { P.armor = e.keep.armor; P.fuel = e.keep.fuel; P.ammo = { ...e.keep.ammo }; }
   else { P.armor = CRAFT[e.craft].armor; P.fuel = T.FUEL; P.ammo = {}; fillAmmo(P, 1); }
   emit(w, 'enter', { craft: e.craft, stolen });

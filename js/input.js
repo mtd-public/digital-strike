@@ -1,7 +1,8 @@
 // Controls. The floating thumbstick and per-pointer hold buttons are gig-ambulance's (via mstr-gme-dsgn-tmpt
 // kits/vanilla-js/input/floating-stick-and-hold-buttons.js, verbatim in spirit: a new touch always takes the
 // stick; reset on blur / visibilitychange / pagehide / lostpointercapture / pause), plus a keyboard map and a
-// standard-mapping gamepad (twin stick: left flies, right points the nose).
+// standard-mapping gamepad (twin stick: left flies, right points the nose). The chain gun has no button: any
+// press on the right side of the screen that isn't on a button fires it for as long as it's held.
 export class InputManager {
   constructor(canvas) {
     this.canvas = canvas;
@@ -9,6 +10,8 @@ export class InputManager {
     this.stickActive = false; this.stickBaseX = 0; this.stickBaseY = 0; this.stickThumbX = 0; this.stickThumbY = 0; this.stickRadius = 64;
     this.held = { gun: false, msl: false, mine: false };
     this._stickId = null; this._keys = new Set(); this._buttons = [];
+    this._fireIds = new Map(); this.fireX = 0; this.fireY = 0; // pointers holding the fire zone → their position
+    this.onPointer = null; // () => void on any press (audio unlock)
     this.onKey = null; // (key) => void, one-shots (camera, pause, mute)
     this.onPad = null; // (button name) => void, gamepad one-shots
     this._padPrev = [];
@@ -22,18 +25,28 @@ export class InputManager {
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       this.lastDevice = e.pointerType === 'mouse' ? 'mouse' : 'touch';
-      if (!this._isStickZone(e.clientX)) return;
+      this.onPointer?.();
+      if (!this._isStickZone(e.clientX)) { // the fire zone
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        this._fireIds.set(e.pointerId, true); this.held.gun = true; this.fireX = e.clientX; this.fireY = e.clientY;
+        try { el.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events */ }
+        return;
+      }
       this._stickId = e.pointerId; this.stickActive = true; this.hasDirection = false; this.magnitude = 0;
       this.stickBaseX = this.stickThumbX = e.clientX; this.stickBaseY = this.stickThumbY = e.clientY;
       try { el.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events */ }
     }, { passive: false });
     el.addEventListener('pointermove', (e) => {
+      if (this._fireIds.has(e.pointerId)) { this.fireX = e.clientX; this.fireY = e.clientY; return; }
       if (e.pointerId !== this._stickId) return;
       e.preventDefault();
       if (e.pointerType === 'mouse' && e.buttons === 0) { this.releaseStick(); return; }
       this._updateStick(e.clientX, e.clientY);
     }, { passive: false });
-    const end = (e) => { if (e.pointerId === this._stickId) this.releaseStick(); };
+    const end = (e) => {
+      if (e.pointerId === this._stickId) this.releaseStick();
+      if (this._fireIds.delete(e.pointerId)) this.held.gun = this._fireIds.size > 0;
+    };
     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('lostpointercapture', end);
     window.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
@@ -48,8 +61,9 @@ export class InputManager {
     window.addEventListener('pagehide', () => this.reset());
   }
   releaseStick() { this._stickId = null; this.stickActive = false; this.hasDirection = false; this.magnitude = 0; }
+  get firing() { return this._fireIds.size > 0; }
   reset() {
-    this.releaseStick(); this._keys.clear();
+    this.releaseStick(); this._keys.clear(); this._fireIds.clear();
     for (const k in this.held) this.held[k] = false;
     for (const b of this._buttons) b.classList.remove('down');
   }
@@ -84,7 +98,7 @@ export class InputManager {
     if (!gp) return null;
     const ax = (i) => { const v = gp.axes[i] || 0; return Math.abs(v) < 0.18 ? 0 : v; };
     const bt = (i) => !!gp.buttons[i]?.pressed || (gp.buttons[i]?.value || 0) > 0.4;
-    const names = { 0: 'msl', 1: 'mine', 2: 'action', 3: 'cam', 9: 'pause', 8: 'mute' };
+    const names = { 0: 'msl', 1: 'mine', 2: 'action', 3: 'cam', 9: 'pause', 8: 'mute', 10: 'xform', 13: 'xform' };
     for (const i in names) { const now = bt(+i); if (now && !this._padPrev[i] && this.onPad) this.onPad(names[i]); this._padPrev[i] = now; }
     const lx = ax(0), ly = ax(1), rx = ax(2), ry = ax(3);
     const any = lx || ly || rx || ry || gp.buttons.some((b) => b.pressed);

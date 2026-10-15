@@ -283,4 +283,8 @@ export const SFX = {
   stolen: (s) => s.arp([262, 330, 392, 523, 659, 784], 0.07, 0.2, 'sawtooth', 0.05),
   alarm: (s) => [0, 0.45, 0.9].forEach((d) => s.tone(620, 0.4, 'sawtooth', 0.05, 280, d)),
   beam: (s) => s.tone(180, 0.6, 'sawtooth', 0.04, 60),
+  // spider mode: servos whine as the rotor folds and the legs unfold, clanks as each joint locks; footfalls
+  xform: (s) => { s.tone(150, 1.1, 'sawtooth', 0.035, 300); s.tone(300, 1.0, 'square', 0.015, 500, 0.1); [0.3, 0.62, 0.95, 1.2].forEach((d) => { s.tone(220, 0.08, 'square', 0.05, -90, d); s.burst(0.06, 2600, { q: 2, vol: 0.08, delay: d }); }); },
+  step: (s) => { s.burst(0.08, 420, { type: 'lowpass', vol: 0.1, f1: 90 }); s.tone(80, 0.07, 'square', 0.025, -30); },
+  stomp: (s) => { s.burst(0.22, 300, { type: 'lowpass', vol: 0.22, f1: 50 }); s.tone(55, 0.25, 'sine', 0.14, -20); },
 };

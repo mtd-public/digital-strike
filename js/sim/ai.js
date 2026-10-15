@@ -1,6 +1,7 @@
 // Every non-player thing that moves or shoots: soldiers (and alien troopers), tanks, technicals, civilian
-// cars, gunboats, drones, saucers, gunships, jets, the mothership, naval mines, and the structures that
-// fight back (flak, SAMs, shore batteries, barracks). Each kind is a small state machine.
+// cars, gunboats, drones, saucers, gunships, jets, the mothership, naval mines, crawler bombs and WIDOW
+// walkers, and the structures that fight back (flak, SAMs, shore batteries, barracks). Each kind is a small
+// state machine. Flak and SAMs are anti-air: they ignore anything on the ground (the pilot, the spider).
 //
 // Telegraphs before damage (house rule): tanks and RPGs wind up (aimT), SAMs lock on with a beam first
 // (lockT), shore batteries flash for a second, the mothership charges its beam.
@@ -17,12 +18,14 @@ export const KIND = {
   drone: { r: 1.1, h: 1.0, air: true, boom: 2 }, saucer: { r: 2.6, h: 1.6, air: true, boom: 3.5 },
   gunship: { r: 3.4, h: 2.6, air: true, boom: 5 }, agunship: { r: 3.4, h: 2.6, air: true, boom: 5 },
   jet: { r: 3.4, h: 1.8, air: true, boom: 4.5 }, mothership: { r: 16, h: 7, air: true, boom: 16 },
+  crawler: { r: 1.3, h: 1.1, boom: 3 }, walker: { r: 3.6, h: 5.6, boom: 8 },
   navmine: { r: 1.5, h: 1.6, boom: 4 }, tanker: { r: 7, h: 9, boom: 12 }, parked: { r: 2.6, h: 3 }, struct: {},
 };
 const SPEC = {
   soldier: T.SOLDIER, rpg: { ...T.SOLDIER, ...T.RPG }, alien: T.ALIEN, heavy: T.HEAVY,
   tank: T.TANK, hovertank: T.HOVERTANK, tech: T.TECH, civ: T.CIV, boat: T.BOAT,
   drone: T.DRONE, saucer: T.SAUCER, gunship: T.GUNSHIP, agunship: T.AGUNSHIP, jet: T.JET, mothership: T.MOTHERSHIP, navmine: T.NAVMINE,
+  crawler: T.CRAWLER, walker: T.WALKER,
 };
 const rand = (w, a, b) => a + (b - a) * w.rng();
 const INF = new Set(['soldier', 'rpg', 'alien', 'heavy']), VEH = new Set(['tank', 'hovertank', 'tech', 'civ']);
@@ -105,16 +108,25 @@ function shoot(w, x, y, z, tgt, o) {
   emit(w, 'eshot', { kind: o.kind, x, y, z });
 }
 
-// Move a ground walker/driver toward (tx, tz) at speed, stopping at walls, water and the shield.
+// Move a ground walker/driver toward (tx, tz) at speed, stopping at walls, water and the shield. Wave units
+// (and crawlers, walkers) slide round what's in the way instead: they try angles off the straight line, on a
+// side each one sticks to, so a column flows round a wall or a building rather than piling up against it.
+const DEFLECT = [0, 0.7, 1.3, 1.9, -0.7, -1.3, -1.9];
 function walk(w, e, tx, tz, speed, dt, r) {
   const dx = tx - e.x, dz = tz - e.z, d = Math.hypot(dx, dz);
   if (d < 0.3) { e.vx = e.vz = 0; return true; }
-  const k = Math.min(speed * dt, d) / d, nx = e.x + dx * k, nz = e.z + dz * k, gy = w.terrain.height(nx, nz);
-  const water = gy < 0.3, wall = blocked(w, nx, nz, r, gy);
-  if (water || wall) { e.vx = e.vz = 0; return false; }
-  e.vx = (nx - e.x) / dt; e.vz = (nz - e.z) / dt; e.x = nx; e.z = nz;
-  e.yaw += clamp(wrapAngle(Math.atan2(dx, dz) - e.yaw), -6 * dt, 6 * dt);
-  return true;
+  const step = Math.min(speed * dt, d), base = Math.atan2(dx, dz);
+  const tries = e.march || e.kind === 'crawler' || e.kind === 'walker' ? DEFLECT : DEFLECT.slice(0, 1);
+  const side = e.side || (e.side = e.id % 2 ? 1 : -1);
+  for (const off of tries) {
+    const a = base + off * side, nx = e.x + Math.sin(a) * step, nz = e.z + Math.cos(a) * step, gy = w.terrain.height(nx, nz);
+    if (gy < 0.3 || blocked(w, nx, nz, r, gy)) continue;
+    e.vx = (nx - e.x) / dt; e.vz = (nz - e.z) / dt; e.x = nx; e.z = nz;
+    e.yaw += clamp(wrapAngle(a - e.yaw), -6 * dt, 6 * dt);
+    return true;
+  }
+  e.vx = e.vz = 0;
+  return false;
 }
 
 export function updateEnt(w, e, dt) {
@@ -132,6 +144,8 @@ export function updateEnt(w, e, dt) {
   if (VEH.has(k)) return vehicle(w, e, dt);
   if (k === 'boat') return boat(w, e, dt);
   if (k === 'navmine') return navmine(w, e, dt);
+  if (k === 'crawler') return crawler(w, e, dt);
+  if (k === 'walker') return walker(w, e, dt);
   if (k === 'mothership') return mothership(w, e, dt);
   if (AIR.has(k)) return air(w, e, dt);
   if (k === 'struct') return structure(w, e, dt);
@@ -263,6 +277,49 @@ function navmine(w, e, dt) {
   }
 }
 
+// ------------------------------------------------------------------ crawlers and walkers (mission 6)
+// Crawlers: scuttle for the nearest thing we defend (or for you, if you get close) and blow up on it.
+function crawler(w, e, dt) {
+  const S = e.spec;
+  const nf = nearestFriend(w, e.x, e.z), p = playerAlive(w) ? playerPos(w) : null;
+  const dP = p ? Math.hypot(p.x - e.x, p.z - e.z) : Infinity;
+  const chase = p && dP < S.see && (!nf || dP < nf.d);
+  const tx = chase ? p.x : nf ? nf.f.x : e.x, tz = chase ? p.z : nf ? nf.f.z : e.z;
+  walk(w, e, tx, tz, S.speed, dt, 0.9);
+  e.y = w.terrain.surface(e.x, e.z);
+  const reached = chase ? dP < p.r + 1.4 : nf && nf.d < 1.6;
+  if (reached) {
+    e.alive = false; e.hp = 0; e.deadT = 0;
+    explode(w, e.x, e.y + 1, e.z, S.blast, S.dmg, 'enemy', 'crawler');
+    emit(w, 'bigBoom', { x: e.x, y: e.y, z: e.z, size: S.blast * 0.6, kind: 'crawler' });
+    emit(w, 'kill', { id: e.id, kind: e.kind, team: e.team, x: e.x, y: e.y + 0.5, z: e.z });
+  }
+}
+// WIDOW walkers: march on the buildings, a telegraphed cannon on the turret and rocket pods for you.
+function walker(w, e, dt) {
+  const S = e.spec;
+  e.cool -= dt; e.salvoCool = (e.salvoCool ?? 3) - dt;
+  const nf = nearestFriend(w, e.x, e.z);
+  if (nf && nf.d > S.range * 0.55) walk(w, e, nf.f.x, nf.f.z, S.speed, dt, 3.2);
+  else e.vx = e.vz = 0;
+  e.y = w.terrain.surface(e.x, e.z);
+  const tgt = pickTarget(w, e, S.see);
+  if (!tgt) return;
+  const want = wrapAngle(Math.atan2(tgt.x - e.x, tgt.z - e.z) - e.yaw);
+  e.tyaw += clamp(wrapAngle(want - e.tyaw), -S.turret * dt, S.turret * dt);
+  const d = Math.hypot(tgt.x - e.x, tgt.z - e.z);
+  // rocket pods: a ripple at you whenever you're in reach
+  if (e.salvo > 0) { e.salvoT -= dt; if (e.salvoT <= 0) { e.salvo--; e.salvoT = S.gap; const side = e.salvo % 2 ? 1 : -1, a = e.yaw + e.tyaw; shoot(w, e.x - Math.cos(a) * side * 2, e.y + 5.2, e.z + Math.sin(a) * side * 2, tgt, { kind: 'rocket', shot: 34, dmg: S.rdmg, range: S.range, spread: 0.05, blast: 2.2, splash: S.rdmg * 0.6, r: 0.5 }); } }
+  else if (e.salvoCool <= 0 && tgt.player && d < S.range) { e.salvo = S.salvo; e.salvoT = 0; e.salvoCool = S.salvoRate; emit(w, 'aim', { id: e.id }); }
+  // the main gun: the muzzle glows, then a heavy shell
+  if (e.aimT > 0) {
+    e.aimT -= dt;
+    if (e.aimT <= 0) { const a = e.yaw + e.tyaw; shoot(w, e.x + Math.sin(a) * 4, e.y + 5.6, e.z + Math.cos(a) * 4, tgt, { kind: 'shell', shot: S.shot, dmg: S.dmg, range: S.range, spread: 0.02, blast: 3.2, splash: S.dmg * 0.5, r: 0.6 }); e.cool = S.rate; e.recoil = 1; }
+    return;
+  }
+  if (e.cool <= 0 && d < S.range && Math.abs(wrapAngle(want - e.tyaw)) < 0.15) { e.aimT = S.aim; emit(w, 'aim', { id: e.id }); }
+}
+
 // ------------------------------------------------------------------ aircraft
 function air(w, e, dt) {
   const S = e.spec, k = e.kind;
@@ -366,7 +423,7 @@ function structure(w, e, dt) {
     if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burst--; e.burstT = S.gap; const p = playerPos(w), d = Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z); shoot(w, e.x, e.y + 2.8, e.z, { ...p, player: true }, { kind: 'flak', shot: S.shot, dmg: S.dmg, range: S.range, spread: S.spread, blast: S.blast, splash: S.dmg, prox: S.prox, life: d / S.shot + 0.05, r: 0.4 }); } return; }
     if (playerAlive(w) && e.cool <= 0) {
       const p = playerPos(w);
-      if (!p.foot && Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z) < S.range) { e.burst = S.burst; e.burstT = 0; e.cool = S.rate; e.tyaw = Math.atan2(p.x - e.x, p.z - e.z); }
+      if (!p.ground && Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z) < S.range) { e.burst = S.burst; e.burstT = 0; e.cool = S.rate; e.tyaw = Math.atan2(p.x - e.x, p.z - e.z); }
     }
     if (playerAlive(w)) { const p = playerPos(w); e.tyaw = Math.atan2(p.x - e.x, p.z - e.z); }
   } else if (t === 'sam') {
@@ -375,7 +432,7 @@ function structure(w, e, dt) {
     const p = playerAlive(w) ? playerPos(w) : null, d = p ? Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z) : Infinity;
     if (p) e.tyaw = Math.atan2(p.x - e.x, p.z - e.z);
     if (e.lockT > 0) {
-      if (!p || p.foot || d > range * 1.15) { e.lockT = 0; e.locking = false; emit(w, 'lockLost', { id: e.id }); return; }
+      if (!p || p.ground || d > range * 1.15) { e.lockT = 0; e.locking = false; emit(w, 'lockLost', { id: e.id }); return; }
       e.lockT -= dt;
       if (e.lockT <= 0) {
         e.locking = false; e.cool = S.cool;
@@ -383,7 +440,7 @@ function structure(w, e, dt) {
         w.shots.push({ team: 'enemy', kind: 'sam', x: e.x, y: e.y + 3, z: e.z, vx: 0, vy: sp, vz: 0, speed: sp, max: S.speed, accel: 30, turn: S.turn, target: 'player', life: S.life, dmg: S.dmg, r: 0.6, explosive: true, radius: 3, splash: S.dmg * 0.4, shootable: true });
         emit(w, 'samLaunch', { id: e.id, x: e.x, y: e.y + 3, z: e.z });
       }
-    } else if (p && !p.foot && e.cool <= 0 && d < range) { e.lockT = lockT; e.lockMax = lockT; e.locking = true; emit(w, 'samLock', { id: e.id }); }
+    } else if (p && !p.ground && e.cool <= 0 && d < range) { e.lockT = lockT; e.lockMax = lockT; e.locking = true; emit(w, 'samLock', { id: e.id }); }
   } else if (t === 'battery') { // shore guns: the tanker first, you if it's out of reach
     const S = T.BATTERY;
     const nf = nearestFriend(w, e.x, e.z, ['tanker']);

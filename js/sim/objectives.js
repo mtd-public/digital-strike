@@ -4,7 +4,9 @@
 //   destroy   wreck every data center, then hover on the LZ to extract           (mission 1)
 //   escort    keep the tanker afloat to the end of the strait                     (mission 2)
 //   heist     generators → land → on foot → steal the prototype → carrier         (mission 3)
-//   defend    survive the waves; lose the protected building and it's over        (mission 4)
+//   defend    survive the waves; lose the protected building(s) and it's over     (missions 4 and 6)
+//             mission 6 opens with a 'deploy' stage: land in the compound and stand up in spider mode,
+//             then the blizzard grounds the rotor (o.noFly) for the rest of the fight
 //   airspace  fill the control meter with air kills before the casinos fall      (mission 5)
 import { TUNING as T } from '../tuning.js';
 import { addEnt, emit, endGame, makeBox, playerPos, lzPos } from './world.js';
@@ -33,8 +35,10 @@ export function setupObjective(w) {
     o.proto = addEnt(w, { kind: 'parked', team: 'friend', craft: 'alien', proto: true, locked: true, immune: true, x: H.proto.x, z: H.proto.z, y: w.terrain.surface(H.proto.x, H.proto.z), yaw: H.proto.yaw, hp: 1 });
     o.total = o.lastLeft = w.ents.filter((e) => e.type === 'generator').length;
   } else if (O.kind === 'defend') {
-    o.stage = 'break'; o.wave = 0; o.breakT = 6; o.waveIds = [];
-    o.protect = w.ents.find((e) => e.type === O.protect);
+    o.stage = O.deploy ? 'deploy' : 'break'; o.wave = 0; o.breakT = 6; o.waveIds = [];
+    o.protects = w.ents.filter((e) => e.kind === 'struct' && e.type === O.protect && e.team === 'friend');
+    o.protect = o.protects[0]; o.loseAt = O.loseAt || o.protects.length; o.lost = 0;
+    if (O.noFly && !O.deploy) { o.noFly = true; o.noFlyWhy = O.noFlyWhy; }
   } else if (O.kind === 'airspace') {
     o.stage = 'raid'; o.control = 10; o.raidT = 3; o.raidI = 0; o.lost = 0;
   }
@@ -58,7 +62,7 @@ function spawnGunship(w, alien) {
 }
 // A wave or raid group, from a bearing at the desert's edge.
 function spawnGroup(w, kind, n, bearing, tag) {
-  const R = Math.min(210, w.level.island.half - 50), ids = [];
+  const R = w.level.objective.spawnR || Math.min(210, w.level.island.half - 50), ids = [];
   for (let i = 0; i < n; i++) {
     const a = bearing + (i - (n - 1) / 2) * 0.09, r = R + (i % 3) * 8;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
@@ -132,21 +136,30 @@ export function updateObjective(w, dt) {
       } else if (P.mode === 'fly') o.stage = 'land';
     } else if (o.stage === 'escape') extractAt(w, H.extract, dt, (p) => p.craft === 'alien');
   } else if (O.kind === 'defend') {
-    if (o.protect && !o.protect.alive) { endGame(w, false, `${o.protect.name} was destroyed`); return; }
-    if (o.stage === 'break') {
+    const lost = o.protects.filter((e) => !e.alive).length;
+    if (lost > o.lost) { o.lost = lost; if (lost < o.loseAt) emit(w, 'objective', { text: `${o.protects.find((e) => !e.alive && !e.mourned)?.name || 'BUILDING'} LOST · ${lost}/${o.loseAt}` }); for (const e of o.protects) if (!e.alive) e.mourned = true; }
+    if (lost >= o.loseAt) { endGame(w, false, o.protects.length > 1 ? (O.loseWhy || 'The data centers fell') : `${o.protect.name} was destroyed`); return; }
+    if (o.stage === 'deploy') { // land in the compound and stand up on the legs; then the weather closes in
+      const C = O.deploy;
+      if (P.mode === 'fly' && P.form === 'spider' && Math.hypot(P.x - C.x, P.z - C.z) < C.r) {
+        o.stage = 'break'; o.breakT = O.breakT;
+        if (O.noFly) { o.noFly = true; o.noFlyWhy = O.noFlyWhy; }
+        emit(w, 'objective', { text: C.done || 'SPIDER MODE · HOLD THE LINE', big: true });
+      }
+    } else if (o.stage === 'break') {
       o.breakT -= dt;
       if (o.breakT <= 0) {
         const groups = L.waves[o.wave];
         o.waveIds = groups.flatMap((g) => spawnGroup(w, g.kind, g.n, g.bearing, o.wave + 1));
         o.stage = 'wave';
-        emit(w, 'objective', { text: o.wave === L.waves.length - 1 ? 'FINAL WAVE · THE MOTHERSHIP' : `WAVE ${o.wave + 1} INCOMING`, big: true });
+        emit(w, 'objective', { text: o.wave === L.waves.length - 1 ? (O.finalText || 'FINAL WAVE · THE MOTHERSHIP') : `WAVE ${o.wave + 1} INCOMING`, big: true });
       }
     } else {
       const live = w.ents.filter((e) => e.wave === o.wave + 1 && (e.alive || e.falling)).length;
       const waveSaucers = w.ents.filter((e) => e.wave === true && e.alive).length; // the mothership's escorts
       if (live === 0 && waveSaucers === 0) {
         o.wave++;
-        if (o.wave >= L.waves.length) { endGame(w, true, 'The base held'); return; }
+        if (o.wave >= L.waves.length) { endGame(w, true, O.winWhy || 'The base held'); return; }
         o.stage = 'break'; o.breakT = O.breakT;
         emit(w, 'objective', { text: `WAVE ${o.wave} CLEARED` });
       }
@@ -193,9 +206,10 @@ function describe(w) {
     o.text = { sabotage: `GENERATORS ${o.total - left}/${o.total}`, land: 'LAND AT THE HANGAR', foot: 'STEAL THE PROTOTYPE', escape: 'TO THE CARRIER' }[o.stage];
     o.goal = { sabotage: 'Destroy the shield generators', land: P.canExit ? 'Press EXIT to get out' : 'Hover on the hangar pad', foot: 'Run into the hangar and board it', escape: 'Fly the prototype to the carrier' }[o.stage];
   } else if (O.kind === 'defend') {
-    o.text = o.stage === 'break' ? `NEXT WAVE ${Math.ceil(o.breakT)}` : `WAVE ${o.wave + 1}/${L.waves.length}`;
-    o.goal = 'Defend the base';
-    if (o.protect) { o.bar = o.protect.hp / o.protect.maxHp; o.barLabel = o.protect.name; }
+    o.text = o.stage === 'deploy' ? 'SPIDER MODE' : o.stage === 'break' ? `NEXT WAVE ${Math.ceil(o.breakT)}` : `WAVE ${o.wave + 1}/${L.waves.length}`;
+    o.goal = o.stage === 'deploy' ? (P.form === 'spider' ? 'Walk into the compound' : 'Land in the compound and press WALK (T)') : O.goal || 'Defend the base';
+    if (o.protects.length > 1) { let hp = 0, max = 0; for (const e of o.protects) { hp += Math.max(0, e.hp); max += e.maxHp; } o.bar = hp / max; o.barLabel = O.barLabel || 'BASE'; }
+    else if (o.protect) { o.bar = o.protect.hp / o.protect.maxHp; o.barLabel = o.protect.name; }
   } else if (O.kind === 'airspace') {
     o.text = `AIRSPACE ${Math.floor(o.control)}%`;
     o.goal = `Shoot down raiders · casinos lost ${o.lost}/${O.loseAt}`;
@@ -227,10 +241,16 @@ export function objectiveTarget(w) {
     return { x: H.extract.x, z: H.extract.z, label: 'CARRIER' };
   }
   if (O.kind === 'defend') {
-    const v = o.protect;
+    if (o.stage === 'deploy') return { x: O.deploy.x, z: O.deploy.z, label: 'LAND' };
+    const guard = o.protects.filter((e) => e.alive);
     const foes = alive(w, (e) => e.team === 'enemy' && e.wave);
-    if (foes.length && v) { let b = null, bd = Infinity; for (const e of foes) { const d = Math.hypot(e.x - v.x, e.z - v.z); if (d < bd) { bd = d; b = e; } } return { x: b.x, z: b.z, label: 'HOSTILE', id: b.id }; }
-    return v && { x: v.x, z: v.z, label: 'H-18' };
+    if (foes.length && guard.length) { // the hostile closest to anything we defend (crawlers count double: they're bombs)
+      let b = null, bd = Infinity;
+      for (const e of foes) for (const v of guard) { const d = Math.hypot(e.x - v.x, e.z - v.z) * (e.kind === 'crawler' ? 0.5 : 1); if (d < bd) { bd = d; b = e; } }
+      return { x: b.x, z: b.z, label: 'HOSTILE', id: b.id };
+    }
+    const v = nearest(guard);
+    return v && { x: v.x, z: v.z, label: O.navLabel || 'H-18' };
   }
   if (O.kind === 'airspace') { const e = nearest(alive(w, isAir)); return e ? { x: e.x, z: e.z, label: 'BANDIT', id: e.id } : null; }
   return null;

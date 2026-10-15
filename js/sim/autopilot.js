@@ -4,11 +4,11 @@
 import { TUNING as T } from '../tuning.js';
 import { CRAFT } from './craft.js';
 import { objectiveTarget } from './objectives.js';
-import { lzPos, playerPos } from './world.js';
+import { lzPos, playerPos, blocked } from './world.js';
 
 export function autopilot(w, mem) {
-  const P = w.P, inp = { mx: 0, mz: 0, gun: false, msl: false, mine: false, action: false, aim: null };
-  if (w.phase !== 'play' || P.mode === 'down' || P.landT > 0) return inp;
+  const P = w.P, inp = { mx: 0, mz: 0, gun: false, msl: false, mine: false, action: false, xform: false, aim: null };
+  if (w.phase !== 'play' || P.mode === 'down' || P.landT > 0 || P.xform) return inp;
   const p = playerPos(w), o = w.obj, kind = w.level.objective.kind;
   const steer = (x, z, k = 1) => { const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz) || 1; inp.mx = (dx / d) * k; inp.mz = (dz / d) * k; return d; };
 
@@ -20,7 +20,7 @@ export function autopilot(w, mem) {
   }
 
   const C = CRAFT[P.craft], lz = lzPos(w);
-  const low = (C.fuelBurn > 0 && P.fuel < 30) || P.armor < C.armor * 0.32 || (P.ammo.msl < 1 && P.ammo.gun < 80 && P.ammo.mine < 1);
+  const low = (C.fuelBurn > 0 && P.fuel < 30) || P.armor < C.armor * 0.32 || (P.ammo.msl < 1 && P.ammo.gun < 80 && (P.ammo.mine < 1 || P.form === 'spider'));
   if (low) mem.resupply = true;
   if (mem.resupply && P.armor >= C.armor * 0.95 && P.fuel >= T.FUEL * 0.95 && P.ammo.msl >= C.weapons.msl.max * 0.9) mem.resupply = false;
 
@@ -30,7 +30,10 @@ export function autopilot(w, mem) {
   const target = goal.id != null ? w.ents.find((e) => e.id === goal.id) : null;
   const d = Math.hypot(goal.x - p.x, goal.z - p.z);
 
-  if (kind === 'heist' && o.stage === 'land' && !mem.resupply) {
+  if (kind === 'defend' && o.stage === 'deploy') { // fly into the compound and stand up on the legs
+    steer(goal.x, goal.z, Math.min(1, d / 12));
+    if (P.form === 'heli' && d < 30 && P.canXform) inp.xform = true;
+  } else if (kind === 'heist' && o.stage === 'land' && !mem.resupply) {
     steer(goal.x, goal.z, Math.min(1, d / 14));
     if (d < 4 && P.canExit) inp.action = true;
   } else if (target && !mem.resupply) {
@@ -50,6 +53,22 @@ export function autopilot(w, mem) {
     steer(ax, az, Math.min(1, Math.hypot(ax - p.x, az - p.z) / 20));
   } else {
     steer(goal.x, goal.z, Math.min(1, d / 12));
+  }
+  // on legs: walk round buildings (the chopper just flies over them). Look a few metres down the wished
+  // direction and swing off it, to the side last chosen, until the way is clear; if still pinned, sidestep.
+  if (P.form === 'spider' && Math.hypot(inp.mx, inp.mz) > 0.2) {
+    const S = T.SPIDER, k = Math.min(1, Math.hypot(inp.mx, inp.mz)), base = Math.atan2(inp.mx, inp.mz);
+    const clear = (a) => [3, 6, 9].every((r) => { const x = p.x + Math.sin(a) * r, z = p.z + Math.cos(a) * r; return w.terrain.height(x, z) > S.wade && !blocked(w, x, z, S.r, w.terrain.surface(x, z)); });
+    if (!clear(base)) {
+      mem.side = mem.side || 1;
+      let found = null;
+      for (const off of [0.45, 0.9, 1.35, 1.8, 2.25]) { for (const sd of [mem.side, -mem.side]) if (found == null && clear(base + off * sd)) { found = base + off * sd; mem.side = sd; } if (found != null) break; }
+      if (found != null) { inp.mx = Math.sin(found) * k; inp.mz = Math.cos(found) * k; }
+    }
+    const sp = Math.hypot(P.vx, P.vz);
+    mem.stuck = sp < 1.2 ? (mem.stuck || 0) + 1 / 60 : 0;
+    if (mem.stuck > 0.8) { mem.unstickUntil = w.t + 1.2; const a = base + (w.rng() < 0.5 ? 1.7 : -1.7); mem.unstick = [Math.sin(a), Math.cos(a)]; mem.stuck = 0; }
+    if (w.t < (mem.unstickUntil || 0)) { inp.mx = mem.unstick[0]; inp.mz = mem.unstick[1]; }
   }
   // weapons: the auto-aim does the aiming
   if (P.target != null) {

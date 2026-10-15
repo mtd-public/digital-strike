@@ -94,7 +94,7 @@ export class FX {
     // explosions light their surroundings: a few pooled point lights (always in the scene, dark when idle,
     // so no shader recompiles; never one per projectile; none at all on LITE devices)
     this.lights = Array.from({ length: LITE ? 0 : 3 }, () => { const l = new THREE.PointLight(0xff9a40, 0, 20, 1.3); l.userData = { life: 1, max: 1, peak: 0 }; scene.add(l); return l; });
-    this.lightI = 0;
+    this.lightI = 0; this.dustColor = 0xc8b898;
     this.shake = 0;
     this.flashK = 0; // whole-screen flash from big explosions (the view adds it to the light)
   }
@@ -158,7 +158,7 @@ export class FX {
       p.g = 20; p.max = 0.25 + Math.random() * 0.35; p.size = 0.12; p.color = color; p.sx = 1; p.sy = 1; p.sz = 2.5;
     }
   }
-  dust(x, y, z, n = 4, size = 0.8, color = 0xc8b898) {
+  dust(x, y, z, n = 4, size = 0.8, color = this.dustColor) {
     for (let i = 0; i < n; i++) {
       const p = this.smokeP.get(), a = Math.random() * 6.28;
       p.x = x; p.y = y; p.z = z; p.vx = Math.cos(a) * 3; p.vy = 0.8 + Math.random(); p.vz = Math.sin(a) * 3; p.max = 0.8 + Math.random() * 0.5; p.size = size; p.grow = 1.4; p.drag = 2.5; p.color = color;
@@ -197,6 +197,7 @@ export class FX {
   }
 
   setNight(on) { this.smokeP.tint = on ? 0.42 : 1; this.debris.tint = on ? 0.6 : 1; }
+  setDust(color = 0xc8b898) { this.dustColor = color; } // kicked-up ground: sand, or snow in mission 6
   update(dt, camQ) {
     this.fire.update(dt, (p, t) => p.size * (t < 0.2 ? 0.5 + t * 2.5 : 1 - (t - 0.2) * 0.9), camQ);
     for (const p of this.debris.list) if (p.on && p.trail && Math.random() < 0.5) { this.puff(p.x, p.y, p.z, 0, 0, 0.35); if (Math.random() < 0.4) this.flame(p.x, p.y, p.z, 0.22); }

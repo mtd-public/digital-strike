@@ -48,9 +48,11 @@
     <div id="toasts"></div>
     <div class="pad" aria-label="Weapons">
       <button id="btn-action" class="pbtn action hidden">EXIT</button>
+      <button id="btn-xform" class="pbtn xform" aria-label="Transform">WALK</button>
       <button id="btn-mine" class="pbtn mine"><span id="name-mine" class="wname">MINES</span><span id="ammo-mine" class="ammo"></span></button>
       <button id="btn-msl" class="pbtn msl"><span id="name-msl" class="wname">HELLFIRE</span><span id="ammo-msl" class="ammo"></span></button>
-      <button id="btn-gun" class="pbtn gun"><span id="name-gun" class="wname">CHAIN GUN</span><span id="ammo-gun" class="ammo"></span></button>
+      <!-- the chain gun has no button: hold anywhere on the right side of the screen (off the buttons) to fire -->
+      <div id="gun-read" class="gunread" aria-label="Chain gun ammo"><span id="name-gun" class="wname">CHAIN GUN</span><span id="ammo-gun" class="ammo"></span></div>
     </div>
   </div>
 
@@ -67,9 +69,10 @@
       <details class="how"><summary>Controls</summary>
         <ul>
           <li><b>Left thumb</b>: drag anywhere on the left to fly (the stick floats under your thumb). Desktop: <b>WASD</b> / arrows</li>
-          <li><b>GUN</b> (hold): chain gun · <b>MSL</b>: Hellfires, homing once the reticle turns red · <b>MINE</b>: drop an explosive mine</li>
-          <li>Desktop: <b>Space / J</b> gun · <b>K</b> missile · <b>L</b> mine · <b>E</b> exit / enter · <b>C</b> camera · <b>P</b> pause · <b>M</b> mute</li>
-          <li>Gamepad: left stick fly, right stick aim the nose, <b>RT</b> gun, <b>RB/A</b> missile, <b>LB/B</b> mine, <b>X</b> exit / enter, <b>Y</b> camera</li>
+          <li><b>Right thumb</b>: hold anywhere on the right side to fire the chain gun · <b>MSL</b>: Hellfires, homing once the reticle turns red · <b>MINE</b>: drop an explosive mine</li>
+          <li><b>WALK / FLY</b>: fold the rotor and stand up on six legs (spider mode: slower, tougher, flak and SAMs can't touch you), or take off again</li>
+          <li>Desktop: <b>Space / J</b> or click on the right side: gun · <b>K</b> missile · <b>L</b> mine · <b>T</b> walk / fly · <b>E</b> exit / enter · <b>C</b> camera · <b>P</b> pause · <b>M</b> mute</li>
+          <li>Gamepad: left stick move, right stick aim the nose, <b>RT</b> gun, <b>RB/A</b> missile, <b>LB/B</b> mine, <b>L3 / D-pad down</b> walk / fly, <b>X</b> exit / enter, <b>Y</b> camera</li>
           <li>Holding fire swings the nose onto the nearest target. Hover on the <b>LZ</b> pad to rearm and refuel; fly over crates to winch them up.</li>
           <li><b>STRIKE</b> camera: the view sits behind you and the stick turns the nose (Soviet Strike controls).</li>
         </ul>

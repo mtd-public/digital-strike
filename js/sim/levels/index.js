@@ -4,6 +4,7 @@ import strait from './strait.js';
 import heist from './heist.js';
 import area51 from './area51.js';
 import vegas from './vegas.js';
+import ironweb from './ironweb.js';
 
-export const LEVELS = [firewall, strait, heist, area51, vegas];
+export const LEVELS = [firewall, strait, heist, area51, vegas, ironweb];
 export const levelById = (id) => LEVELS.find((l) => l.id === id) || LEVELS[0];

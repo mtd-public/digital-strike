@@ -12,7 +12,7 @@ the template's GLB library, and models lifted from dr-mow, Vertical-Vantage and 
 1. **A gunship, not a plane.** You hover, strafe, circle and pick targets; the chopper climbs over roofs on its own,
    so the only altitude decision is where to be.
 2. **Every mission is a different verb.** Destroy (data centers), protect (a tanker), infiltrate (land, walk, steal),
-   hold (waves at Area 51), and control (the Vegas airspace meter).
+   hold (waves at Area 51), control (the Vegas airspace meter), and dig in (spider mode at the snowbound compound).
 3. **Strike-series logistics.** Armor, fuel and ammo all run out; the LZ pad and winched crates are the rhythm
    between fights.
 4. **Readable at a glance.** Red = danger (SAM lock beams, the lock-on reticle when locked, enemy tracers), green =
@@ -32,15 +32,17 @@ the template's GLB library, and models lifted from dr-mow, Vertical-Vantage and 
 | Input | Action |
 |---|---|
 | Touch: left 60 % of the screen | floating stick; the chopper flies the way you push **on screen** (absolute steering) |
-| Touch: GUN (big, bottom-right) | hold: chain gun (12 rounds/s); holding fire swings the nose to the nearest target |
-| Touch: MSL / MINE | Hellfires (homing once the reticle is red) / drop an explosive mine |
+| Touch: anywhere on the right side, off the buttons | hold: chain gun (12 rounds/s); holding fire swings the nose to the nearest target; a ring marks the thumb |
+| Touch: HELLFIRE / MINES | Hellfires (homing once the reticle is red) / drop an explosive mine |
+| Touch: WALK / FLY | fold the rotor and stand up on six legs (spider mode), or take off again |
 | Touch: EXIT / ENTER (appears) | get out on the hangar pad; board a craft on foot |
-| Keyboard | WASD / arrows fly · Space or J gun · K missile · L mine · E exit/enter · C camera · P pause · M mute |
-| Gamepad | left stick fly · right stick point the nose · RT gun · RB/A missile · LB/B mine · X exit/enter · Y camera · Start pause |
+| Keyboard | WASD / arrows fly · Space or J (or click the right side) gun · K missile · L mine · T walk/fly · E exit/enter · C camera · P pause · M mute |
+| Gamepad | left stick fly · right stick point the nose · RT gun · RB/A missile · LB/B mine · L3 or D-pad down walk/fly · X exit/enter · Y camera · Start pause |
 | STRIKE camera (C / ◈) | the camera sits behind you and the stick turns the nose (Soviet Strike tank controls); Z/X strafe |
 
-Scheme: docs/04 "Floating stick + hold buttons" (gig-ambulance). The primary verb (GUN) is the biggest button, under
-the right thumb in both orientations.
+Scheme: docs/04 "Floating stick + hold buttons" (gig-ambulance), with the primary verb promoted from a button to
+the whole right side of the screen: the right thumb fires wherever it lands, and only the missile, mine and
+transform buttons need aiming. The chain gun's ammo shows on a readout under them that presses pass through.
 
 ## 4. Numbers (js/tuning.js holds them all, each with its why)
 | Parameter | Value | Why |
@@ -56,6 +58,9 @@ the right thumb in both orientations.
 | Data center | 1000 hp (city core 1200) | ~4–6 min of a good run for mission 1 |
 | Tanker | 1400 hp, 4.6 m/s, ~200 s run | one missed mine (130) or ignored shore gun hurts but doesn't end it |
 | Casinos | 1100 hp each; lose three, lose Vegas | jets (2 × 16 per pass) and saucer beams (3.5 dps) wear them down |
+| Spider mode | 10 m/s, turret 5 rad/s, 0.7× damage, 0.55× gun spread, 0.3× fuel, 1.3 s to transform | slower and stuck to the ground, but flak and SAMs can't take it and it holds a position |
+| Crawler / WIDOW walker | 24 hp, 8 m/s, 75 blast on contact · 900 hp, cannon 14 + rocket ripples | crawlers make you prioritise; walkers are the mission-6 bosses |
+| Allied data centers (mission 6) | 900 / 1100 / 900 hp; lose two, lose the mission | one can fall to a bad wave and you can still hold |
 
 Difficulty is per mission (the level file), never per zone. `tools/sim-check.mjs` proves each mission winnable.
 
@@ -107,6 +112,7 @@ PS1 mode) sits over the canvas. The player's Apache and XH-0 keep their dr-mow l
 | 3 | OPERATION SKYJACK | sabotage, land, walk, steal the XH-0, escape to the carrier | desert dusk alien base |
 | 4 | OPERATION DREAMLAND | hold Area 51 through five waves and the mothership | desert night |
 | 5 | OPERATION NEON SKY | control the airspace over Las Vegas | night Strip |
+| 6 | OPERATION IRON WEB | land, stand up in spider mode, hold three allied data centers through six waves | blizzard over a northern compound |
 
 All missions are open; winning mission 3 unlocks the XH-0 for every mission (title screen › CRAFT). Ranks S–D
 against each mission's `par`.
@@ -175,3 +181,20 @@ and splashes leave foam wakes; shield generators crackle with arcs.
 - The player's Apache and XH-0 models are unchanged.
 - Cost: SwiftShader (CPU) frame time ~35 % higher than before; lite mode trims the grass and drops the
   explosion lights. Verified: sim-check ALL PASS; smoke 0 console errors, 0 page scroll (also with `?lite=1`).
+
+### Spider mode, mission 6, fire anywhere
+- **Spider mode** (any mission): WALK over open ground folds the rotor and stands the craft up on six legs
+  (`js/render/legs.js`: two-bone IK, feet planted in the world, alternating tripod gait). Slower and bound to the
+  ground, but flak and SAMs ignore it, armor soaks 30 %, the gun is steadier and fuel lasts three times as long.
+  FLY folds the legs and takes off. Both craft walk (the XH-0's legs glow).
+- **Mission 6 · OPERATION IRON WEB**: a new snow theme (blizzard particles, overcast, frozen lake). Fly in, transform
+  inside the compound (the deploy stage), then the blizzard locks the rotor; defend three allied data centers
+  through six waves. New enemies: crawler bombs and WIDOW walkers.
+- **Defend** objectives can now protect several buildings (`protect` by type, `loseAt`), and wave units slide
+  round walls instead of piling up against them (the new map has cover the old ones didn't).
+- **Fire anywhere**: on request, the GUN button is gone; any press on the right side of the screen that isn't on a
+  button fires the chain gun for as long as it's held. Missile and mine buttons stay; WALK / FLY joins them.
+- Verified: sim-check ALL PASS (mission 6 won by the autopilot on legs with and without god mode, five seeds;
+  spider rules checked: no footing over the sea, walk speed, AA ignores it, armor, every weapon, transform back);
+  smoke PASS at all four sizes (the phone fires with a real held touch and taps WALK), 0 console errors.
+

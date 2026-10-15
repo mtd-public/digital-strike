@@ -11,13 +11,14 @@ import * as S from './structures.js';
 import { buildTown, CITY_ASSETS } from './city.js';
 import { buildDecor } from './decor.js';
 import { buildAtmos, updateAtmos } from './atmos.js';
+import { LegRig, LEG_STYLE } from './legs.js';
 import { loadAssets, spawn, hasModel, tintMaterials, cloneMaterials } from './assets.js';
 import { mat } from './kit.js';
 import { playerPos, lzPos } from '../sim/world.js';
 import { TUNING as T } from '../tuning.js';
 import { clamp, damp, wrapAngle } from '../utils.js';
 
-const FOV = 32, PITCH = { iso: 52, strike: 44 }, SPAN = { fly: 52, foot: 28 }; // SPAN: metres across the short side of the screen
+const FOV = 32, PITCH = { iso: 52, strike: 44 }, SPAN = { fly: 52, spider: 42, foot: 28 }; // SPAN: metres across the short side of the screen
 const TRACER = { bullet: [0xffe27a, 2.4, 0.13], pistol: [0xfff0b0, 1.3, 0.1], plasma: [0x3dfff0, 3.0, 0.24], ebullet: [0xff5a30, 1.8, 0.13], bolt: [0x7aff4a, 1.6, 0.3], flak: [0x2a2a2a, 0.6, 0.5], shell: [0xffa040, 1.0, 0.36] };
 const INF = ['soldier', 'rpg', 'alien', 'heavy', 'pilot'];
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _c = new THREE.Color();
@@ -46,6 +47,10 @@ export class View {
     // the player's craft (both built; one shows), the pilot on foot
     this.apache = M.createApache(M.LIVERY.player); this.alien = M.createAlienCopter(M.ALIEN_LIVERY.player);
     scene.add(this.apache, this.alien);
+    // spider mode: six legs that unfold from a ring under the belly (one rig per craft; the fuselage turns on top)
+    this.legs = { apache: new LegRig({ style: LEG_STYLE.apache, s: 1.3 }), alien: new LegRig({ style: LEG_STYLE.alien, s: 1.3 }) };
+    this.legYaw = 0; this.steps = 0; this.stomps = 0;
+    for (const r of Object.values(this.legs)) { scene.add(r.group); r.onStep = (x, y, z) => { this.steps++; this.fx.dust(x, y, z, 1, 0.45); }; }
     // troops: three InstancedMeshes per look (body, left leg, right leg)
     this.troops = {};
     const tm = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -83,11 +88,11 @@ export class View {
     const L = w.level, theme = (this.theme = L.theme), TH = THEMES[theme];
     this.scene.background = new THREE.Color(TH.sky);
     this.scene.fog = new THREE.Fog(TH.fog, TH.fogNear, TH.fogFar);
-    this.fx.setNight(!!TH.night);
+    this.fx.setNight(!!TH.night); this.fx.setDust(TH.dust);
     this.hemi.color.set(TH.hemiSky); this.hemi.groundColor.set(TH.hemiGround); this.hemi.intensity = this.hemiI = TH.hemiI;
     this.sun.color.set(TH.sun); this.sun.intensity = TH.sunI; this.sunDir = new THREE.Vector3(...TH.sunDir).normalize();
     // the gig pastels, toned to each mission
-    tintMaterials(TH.night ? { grass: 0x2a4a2a, grass2: 0x22401f, sidewalk: 0x4a4a58 } : theme === 'dusk' ? { grass: 0x9a8a50, grass2: 0x8a7a44, sidewalk: 0xa89a8a } : { grass: 0x4a9a3a, grass2: 0x3a8a30, sidewalk: 0xb8b4c0 });
+    tintMaterials(TH.night ? { grass: 0x2a4a2a, grass2: 0x22401f, sidewalk: 0x4a4a58 } : TH.snow ? { grass: 0xdfe6ee, grass2: 0xd0d8e2, sidewalk: 0x9aa0a8 } : theme === 'dusk' ? { grass: 0x9a8a50, grass2: 0x8a7a44, sidewalk: 0xa89a8a } : { grass: 0x4a9a3a, grass2: 0x3a8a30, sidewalk: 0xb8b4c0 });
     const terr = buildTerrain(w.terrain, L, theme); this.root.add(terr);
     if (terr.userData.minH < -0.5) { this.water = buildWater(theme, w.terrain); this.root.add(this.water); } else this.water = null;
     const town = buildTown(w, theme); this.root.add(town);
@@ -156,6 +161,8 @@ export class View {
     else if (k === 'jet') obj = M.createJet();
     else if (k === 'navmine') obj = M.createNavMine();
     else if (k === 'tanker') obj = M.createTanker();
+    else if (k === 'walker') { obj = M.createWalker(); this.root.add(obj.userData.rig.group); obj.userData.rig.onStep = (x, y, z) => { this.stomps++; this.fx.dust(x, y, z, 1, 0.75); }; }
+    else if (k === 'crawler') obj = M.createCrawler();
     else if (k === 'parked') obj = e.craft === 'alien' ? M.createAlienCopter(M.ALIEN_LIVERY.player) : M.createApache(M.LIVERY.player);
     else if (INF.includes(k)) return { troop: k };
     if (!obj) return { none: true };
@@ -210,6 +217,13 @@ export class View {
       if (v.sunk) o.position.y -= 1;
       return;
     }
+    if (k === 'walker') return this.poseWalker(e, v, dt, t, w);
+    if (k === 'crawler') {
+      o.position.set(e.x, e.y, e.z); o.rotation.y = e.yaw; o.visible = e.alive;
+      const sc = Math.sin(t * 24 + e.id) * 0.35; u.sets[0].rotation.y = sc; u.sets[1].rotation.y = -sc; u.body.position.y = Math.abs(sc) * 0.12;
+      u.eye.visible = Math.floor(t * 9 + e.id) % 2 === 0;
+      return;
+    }
     if (k === 'parked') { o.position.set(e.x, e.y + 1.0, e.z); o.rotation.y = e.yaw; o.visible = e.alive; if (u.rotor) u.rotor.rotation.y += dt * (v.spin = Math.max(0, (v.spin ?? 20) - dt * 5)); if (u.ring) u.ring.material.color.set(e.locked ? 0x3a3a4a : 0x3dfff0); return; }
     // moving things
     const air = e.air;
@@ -256,6 +270,26 @@ export class View {
     if (!e.alive && k !== 'boat' && (v.smokeT -= dt) <= 0 && e.deadT < 12) { v.smokeT = 0.2; this.fx.smoke(e.x, e.y + 1.5, e.z, 1.2, true, 3, 2); if (e.deadT < 7 && !INF.includes(k)) { this.fx.flame(e.x + (Math.random() - 0.5) * 2, e.y + 1.4, e.z + (Math.random() - 0.5) * 2, 0.7); this.fx.glow(e.x, e.y + 2, e.z, 5, 0xff7a30, 0.25); } }
   }
 
+  // WIDOW walkers: legs on the ground, hull at H, turret and cannon; dead ones fold up and sink to the snow
+  poseWalker(e, v, dt, t, w) {
+    const o = v.obj, u = o.userData, gnd = (x, z) => this.ground(w, x, z);
+    if (e.alive) {
+      const sp = Math.hypot(e.vx || 0, e.vz || 0), bob = Math.sin(t * 7 + e.id) * 0.08 * Math.min(1, sp / 2);
+      o.position.set(e.x, e.y + u.H + bob, e.z); o.rotation.y = e.yaw;
+      u.rig.update(dt, e.x, e.y + u.H + bob, e.z, e.yaw, e.vx || 0, e.vz || 0, 1, gnd);
+      u.turret.rotation.y = damp(u.turret.rotation.y, e.tyaw || 0, 6, dt);
+      u.tip.visible = e.aimT > 0 && Math.floor(t * 14) % 2 === 0;
+      e.recoil = Math.max(0, (e.recoil || 0) - dt * 2.5); u.gun.position.z = 1.4 - e.recoil * 0.7;
+      return;
+    }
+    v.fall = Math.min(1, (v.fall || 0) + dt * 1.2);
+    const k = v.fall * v.fall;
+    o.position.set(e.x, e.y + u.H - (u.H - 1.4) * k, e.z); o.rotation.z = k * 0.25;
+    u.rig.update(dt, e.x, o.position.y, e.z, e.yaw, 0, 0, 1 - k * 0.85, gnd);
+    if (!v.burnt) { v.burnt = true; u.tip.visible = false; for (const g of [o, u.rig.group]) g.traverse((m) => { if (m.isMesh && !m.userData.hull) m.material = BURNT; }); }
+    if ((v.smokeT -= dt) <= 0 && e.deadT < 14) { v.smokeT = 0.15; this.fx.smoke(e.x, e.y + 2.5, e.z, 1.8, true, 3, 2.4); if (e.deadT < 9) { this.fx.flame(e.x + (Math.random() - 0.5) * 3, e.y + 2, e.z + (Math.random() - 0.5) * 3, 1); this.fx.glow(e.x, e.y + 3, e.z, 7, 0xff7a30, 0.25); } }
+  }
+
   ground(w, x, z) { return w.terrain.surface(x, z); }
 
   // ---------------------------------------------------------------- per-frame
@@ -273,7 +307,7 @@ export class View {
       if (v.troop) this.poseTroop(e, v.troop, t);
       else if (v.obj) this.poseVis(e, v, dt, t, w);
     }
-    for (const [id, v] of this.vis) if (!seen.has(id)) { v.obj?.removeFromParent(); v.obj?.userData.rubble?.removeFromParent(); v.obj?.userData.beam?.removeFromParent(); this.vis.delete(id); }
+    for (const [id, v] of this.vis) if (!seen.has(id)) { v.obj?.removeFromParent(); v.obj?.userData.rubble?.removeFromParent(); v.obj?.userData.beam?.removeFromParent(); v.obj?.userData.rig?.group.removeFromParent(); this.vis.delete(id); }
     // the player
     this.posePlayer(w, dt, t);
     for (const k in this.troops) { const tr = this.troops[k]; for (const im of [tr.body, tr.legL, tr.legR]) { im.count = tr.n; im.instanceMatrix.needsUpdate = true; } }
@@ -316,29 +350,40 @@ export class View {
   posePlayer(w, dt, t) {
     const P = w.P, flying = P.mode === 'fly';
     const craft = P.craft === 'alien' ? this.alien : this.apache, other = P.craft === 'alien' ? this.apache : this.alien;
-    other.visible = false;
+    const rig = P.craft === 'alien' ? this.legs.alien : this.legs.apache, otherRig = P.craft === 'alien' ? this.legs.apache : this.legs.alien;
+    other.visible = false; otherRig.group.visible = false;
     craft.visible = flying && !(P.invT > 0 && Math.floor(t * 12) % 2 === 0);
-    const u = craft.userData;
+    const u = craft.userData, lk = flying ? P.legK : 0;
     if (flying) {
-      const vx = P.vx, vz = P.vz;
-      craft.position.set(P.x, P.y + Math.sin(t * 1.7) * 0.12, P.z);
+      const vx = P.vx, vz = P.vz, sp = Math.hypot(vx, vz);
+      // on legs: the leg ring swings round to the way it walks; the fuselage on top is the turret (P.yaw)
+      if (lk > 0 && sp > 1) this.legYaw += wrapAngle(Math.atan2(vx, vz) - this.legYaw) * (1 - Math.exp(-2.5 * dt));
+      if (lk <= 0) this.legYaw = P.yaw;
+      const bob = lk > 0 ? Math.abs(Math.sin(t * 8.5)) * 0.07 * Math.min(1, sp / 4) * lk : 0;
+      craft.position.set(P.x, P.y + bob + Math.sin(t * 1.7) * 0.12 * (1 - lk), P.z);
       craft.rotation.y = P.yaw;
-      const fwd = vx * Math.sin(P.yaw) + vz * Math.cos(P.yaw), side = vx * Math.cos(P.yaw) - vz * Math.sin(P.yaw);
-      u.tilt.rotation.x = damp(u.tilt.rotation.x, clamp(fwd * 0.016, -0.32, 0.32), 4, dt);
-      u.tilt.rotation.z = damp(u.tilt.rotation.z, clamp(-side * 0.022, -0.4, 0.4), 4, dt);
-      u.rotor.rotation.y += dt * (P.landT > 0 ? 14 : 28);
-      if (u.tail) u.tail.rotation.x += dt * 34;
+      rig.update(dt, P.x, P.y + bob, P.z, this.legYaw, vx, vz, lk, (x, z) => this.ground(w, x, z));
+      rig.group.visible = rig.group.visible && craft.visible;
+      const fwd = vx * Math.sin(P.yaw) + vz * Math.cos(P.yaw), side = vx * Math.cos(P.yaw) - vz * Math.sin(P.yaw), air = 1 - lk;
+      u.tilt.rotation.x = damp(u.tilt.rotation.x, clamp(fwd * 0.016 * air, -0.32, 0.32), 4, dt);
+      u.tilt.rotation.z = damp(u.tilt.rotation.z, clamp(-side * 0.022 * air, -0.4, 0.4), 4, dt);
+      // the rotor spins down and its blades telescope in as the legs come out
+      u.rotor.rotation.y += dt * (P.landT > 0 ? 14 : 28) * Math.max(0, 1 - lk * 1.4);
+      const fold = 1 - 0.62 * lk; u.rotor.scale.set(fold, 1, fold);
+      if (u.blur) u.blur.visible = lk < 0.4;
+      if (u.tail) u.tail.rotation.x += dt * 34 * air;
       u.kick = Math.max(0, u.kick - dt * 4); u.pod.position.y = u.podY + u.kick * 0.15;
       // the chin gun swivels toward the target
       const tg = P.target != null && this.vis.get(P.target) ? w.ents.find((e) => e.id === P.target) : null;
       const want = tg ? wrapAngle(Math.atan2(tg.x - P.x, tg.z - P.z) - P.yaw) : 0;
       u.gun.rotation.y = damp(u.gun.rotation.y, clamp(want, -1.2, 1.2), 10, dt);
-      u.gun.rotation.x = damp(u.gun.rotation.x, tg ? 0.35 : 0.1, 8, dt);
+      u.gun.rotation.x = damp(u.gun.rotation.x, tg ? (lk > 0.5 ? 0.12 : 0.35) : 0.1, 8, dt);
       u.flash.visible = (this.gunFlash = Math.max(0, (this.gunFlash || 0) - dt)) > 0 && Math.random() < 0.8;
       if (u.ring) u.ring.material.color.setHSL(0.48 + Math.sin(t * 4) * 0.03, 1, 0.55);
-      if (u.exhausts.length && Math.random() < 0.5) { u.exhausts[Math.random() < 0.5 ? 0 : 1].getWorldPosition(_v); this.fx.puff(_v.x, _v.y, _v.z, -Math.sin(P.yaw) * 3, -Math.cos(P.yaw) * 3, 0.25); }
-      if (P.y - this.ground(w, P.x, P.z) < 4 && Math.random() < 0.6) { const gy = this.ground(w, P.x, P.z); if (w.terrain.height(P.x, P.z) < 0) this.fx.splash(P.x + (Math.random() - 0.5) * 6, P.z + (Math.random() - 0.5) * 6, 0.3); else this.fx.dust(P.x + (Math.random() - 0.5) * 6, gy, P.z + (Math.random() - 0.5) * 6, 1, 1.2); }
-    }
+      if (u.exhausts.length && Math.random() < 0.5 - lk * 0.3) { u.exhausts[Math.random() < 0.5 ? 0 : 1].getWorldPosition(_v); this.fx.puff(_v.x, _v.y, _v.z, -Math.sin(P.yaw) * 3, -Math.cos(P.yaw) * 3, 0.25); }
+      if (lk < 0.2 && P.y - this.ground(w, P.x, P.z) < 4 && Math.random() < 0.6) { const gy = this.ground(w, P.x, P.z); if (w.terrain.height(P.x, P.z) < 0) this.fx.splash(P.x + (Math.random() - 0.5) * 6, P.z + (Math.random() - 0.5) * 6, 0.3); else this.fx.dust(P.x + (Math.random() - 0.5) * 6, gy, P.z + (Math.random() - 0.5) * 6, 1, 1.2); }
+      if (P.xform && Math.random() < 0.5) { this.fx.sparks(P.x + (Math.random() - 0.5) * 2, P.y - 0.9, P.z + (Math.random() - 0.5) * 2, 1, 0xffd080, 3); if (Math.random() < 0.3) this.fx.puff(P.x, P.y - 0.8, P.z, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.5); }
+    } else rig.group.visible = false;
     if (P.mode === 'foot') this.poseTroop({ x: P.foot.x, y: P.foot.y, z: P.foot.z, yaw: P.foot.yaw, vx: P.foot.vx, vz: P.foot.vz, alive: true, id: 0, aimT: 0 }, 'pilot', t);
   }
 
@@ -465,6 +510,8 @@ export class View {
       case 'crash': fx.explosion(ev.x, ev.y, ev.z, 5, ev.y); break;
       case 'kill': if (ev.kind === 'struct' && (ev.type === 'datacenter' || ev.type === 'casino' || ev.type === 'vault')) fx.shake = 1.4; break;
       case 'pickup': fx.sparks(ev.x, ev.y + 1, ev.z, 12, 0x7aff9a, 5); break;
+      case 'xform': fx.sparks(ev.x, ev.y, ev.z, 14, 0xffd080, 6); fx.puff(ev.x, ev.y - 0.5, ev.z, 0, 0, 0.9); break;
+      case 'xformDone': if (ev.to === 'spider') { const P = w.P; fx.ring(P.x, this.ground(w, P.x, P.z) + 0.2, P.z, 7, 0xd8e4f0); fx.dust(P.x, this.ground(w, P.x, P.z), P.z, 8, 1.5); fx.shake = Math.max(fx.shake, 0.35); } break;
     }
   }
 
@@ -476,7 +523,7 @@ export class View {
     const yawWant = strike ? (foot ? P.foot.yaw : P.yaw) + Math.PI : Math.PI / 4;
     this.camYaw = this.snap ? yawWant : this.camYaw + wrapAngle(yawWant - this.camYaw) * (1 - Math.exp(-dt * (strike ? 2.2 : 4)));
     this.pitch = damp(this.pitch, strike ? PITCH.strike : PITCH.iso, 3, dt);
-    this.span = damp(this.span, foot ? SPAN.foot : SPAN.fly, 2, dt);
+    this.span = damp(this.span, foot ? SPAN.foot : SPAN.fly + (SPAN.spider - SPAN.fly) * (P.mode === 'fly' ? P.legK : 0), 2, dt);
     const look = foot ? 0.3 : 0.55;
     const fx = p.x + (p.vx || 0) * look, fz = p.z + (p.vz || 0) * look;
     const gy = this.ground(w, p.x, p.z);

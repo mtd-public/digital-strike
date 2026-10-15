@@ -36,8 +36,8 @@ export function buildTown(w, theme) {
   // greenery: deterministic scatter over open land, away from pads, roads, buildings and the sea
   const pal = L.decor?.palms || 'tropic';
   const kinds = { tropic: [['prop_palm', 0.3], ['prop_tree_round', 0.45], ['prop_bush', 1]], pine: [['prop_tree_pine', 0.75], ['prop_tree_round', 0.85], ['prop_bush', 1]],
-    desert: [['prop_bush', 1]], vegas: [['prop_bush', 0.7], ['prop_palm', 1]] }[pal];
-  const count = { tropic: 230, pine: 300, desert: 70, vegas: 50 }[pal];
+    desert: [['prop_bush', 1]], vegas: [['prop_bush', 0.7], ['prop_palm', 1]], snow: [['prop_tree_pine', 1]] }[pal];
+  const count = { tropic: 230, pine: 300, desert: 70, vegas: 50, snow: 160 }[pal];
   const busy = [...w.solids.map((b) => [b.x, b.z, Math.max(b.hw, b.hd) + 6]), ...w.ents.filter((e) => e.kind === 'struct').map((e) => [e.x, e.z, 16])];
   const inFlat = (x, z) => L.island.flats.some((f) => x > f.x0 - 6 && x < f.x1 + 6 && z > f.z0 - 6 && z < f.z1 + 6);
   let placed = 0;

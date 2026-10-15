@@ -1,11 +1,12 @@
-// What you can fly (and walk as). Weapon slots are always gun / msl / mine (the three pad buttons), so
-// the HUD, input and autopilot don't care which craft you're in.
+// What you can fly (and walk as). Both craft fold their rotors and stand up on six legs (spider mode,
+// TUNING.SPIDER): slower, tougher, invisible to flak and SAMs, same three weapons. Weapon slots are always
+// gun / msl / mine, so the HUD, input and autopilot don't care which craft you're in.
 import { TUNING as T } from '../tuning.js';
 
 export const CRAFT = {
   // The Apache: dr-mow's attack helicopter (js/scene.js createHeli), now yours.
   apache: {
-    name: 'AH-64 APACHE', speed: T.HELI_SPEED, strafe: T.HELI_STRAFE, accel: T.HELI_ACCEL, turn: T.HELI_TURN,
+    name: 'AH-64 APACHE', spiderName: 'AH-64 · SPIDER', speed: T.HELI_SPEED, strafe: T.HELI_STRAFE, accel: T.HELI_ACCEL, turn: T.HELI_TURN,
     armor: T.ARMOR, armorRegen: 0, fuelBurn: T.FUEL_BURN, hitR: 2.6,
     weapons: {
       gun: { name: 'CHAIN GUN', kind: 'bullet', rate: T.GUN_RATE, dmg: T.GUN_DMG, speed: T.GUN_SPEED, spread: T.GUN_SPREAD, range: T.GUN_RANGE, ammo: T.GUN_AMMO, max: T.GUN_MAX, regen: 0, refill: T.LZ_GUN, pick: T.PICK_GUN },
@@ -16,7 +17,7 @@ export const CRAFT = {
   // The XH-0 prototype stolen in OPERATION SKYJACK: faster, tougher, no fuel, and its alien weapons recharge
   // on their own (energy, not ammo), so it never needs the LZ for anything but repairs.
   alien: {
-    name: 'XH-0 PROTOTYPE', speed: 30, strafe: 22, accel: 46, turn: 3.8,
+    name: 'XH-0 PROTOTYPE', spiderName: 'XH-0 · STRIDER', speed: 30, strafe: 22, accel: 46, turn: 3.8,
     armor: 150, armorRegen: 1.5, fuelBurn: 0, hitR: 2.6,
     weapons: {
       gun: { name: 'PLASMA', kind: 'plasma', rate: 9, dmg: 11, speed: 140, spread: 0.02, range: 72, ammo: 120, max: 120, regen: 26, refill: 120, pick: 120 },
